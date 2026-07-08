@@ -1,0 +1,812 @@
+     1→     1→'use client';
+     2→     2→
+     3→     3→import { useState, useEffect, useCallback, useMemo } from 'react';
+     4→     4→import {
+     5→     5→  Briefcase,
+     6→     6→  Calendar,
+     7→     7→  Clock,
+     8→     8→  User,
+     9→     9→  Mail,
+    10→    10→  MessageSquare,
+    11→    11→  CheckCircle,
+    12→    12→  XCircle,
+    13→    13→  AlertCircle,
+    14→    14→  Eye,
+    15→    15→  FileText,
+    16→    16→  ExternalLink,
+    17→    17→  Phone,
+    18→    18→  Video,
+    19→    19→  Award,
+    20→    20→  TrendingUp,
+    21→    21→  ChevronDown,
+    22→    22→  ChevronUp,
+    23→    23→  LayoutGrid,
+    24→    24→  Columns,
+    25→    25→} from 'lucide-react';
+    26→    26→
+    27→    27→import { Card, CardContent } from '@/components/ui/card';
+    28→    28→import { Badge } from '@/components/ui/badge';
+    29→    29→import { Button } from '@/components/ui/button';
+    30→    30→import { Skeleton } from '@/components/ui/skeleton';
+    31→    31→import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
+    32→    32→import { Separator } from '@/components/ui/separator';
+    33→    33→import { Progress } from '@/components/ui/progress';
+    34→    34→import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+    35→    35→
+    36→    36→// ---------------------------------------------------------------------------
+    37→    37→// Types
+    38→    38→// ---------------------------------------------------------------------------
+    39→    39→
+    40→    40→type ApplicationStatus =
+    41→    41→  | 'submitted'
+    42→    42→  | 'reviewing'
+    43→    43→  | 'interview'
+    44→    44→  | 'assessment'
+    45→    45→  | 'offer'
+    46→    46→  | 'rejected'
+    47→    47→  | 'ghosted';
+    48→    48→
+    49→    49→interface TimelineEvent {
+    50→    50→  status: string;
+    51→    51→  date: string;
+    52→    52→  note?: string;
+    53→    53→}
+    54→    54→
+    55→    55→interface Application {
+    56→    56→  id: string;
+    57→    57→  jobTitle: string;
+    58→    58→  companyName: string;
+    59→    59→  status: ApplicationStatus;
+    60→    60→  atsScore: number;
+    61→    61→  appliedDate: string;
+    62→    62→  jobUrl?: string;
+    63→    63→  coverLetter?: string;
+    64→    64→  notes?: string;
+    65→    65→  recruiterName?: string;
+    66→    66→  recruiterEmail?: string;
+    67→    67→  recruiterPhone?: string;
+    68→    68→  feedback?: string;
+    69→    69→  timeline: TimelineEvent[];
+    70→    70→  followUpEligible: boolean;
+    71→    71→}
+    72→    72→
+    73→    73→interface StatusCounts {
+    74→    74→  all: number;
+    75→    75→  submitted: number;
+    76→    76→  reviewing: number;
+    77→    77→  interview: number;
+    78→    78→  assessment: number;
+    79→    79→  offer: number;
+    80→    80→  rejected: number;
+    81→    81→  ghosted: number;
+    82→    82→}
+    83→    83→
+    84→    84→// ---------------------------------------------------------------------------
+    85→    85→// Constants
+    86→    86→// ---------------------------------------------------------------------------
+    87→    87→
+    88→    88→const STATUS_CONFIG: Record<
+    89→    89→  ApplicationStatus,
+    90→    90→  { label: string; bg: string; text: string; dot: string }
+    91→    91→> = {
+    92→    92→  submitted: {
+    93→    93→    label: 'Submitted',
+    94→    94→    bg: 'bg-teal-100 dark:bg-teal-900/40',
+    95→    95→    text: 'text-teal-700 dark:text-teal-300',
+    96→    96→    dot: 'bg-teal-500',
+    97→    97→  },
+    98→    98→  reviewing: {
+    99→    99→    label: 'Reviewing',
+   100→   100→    bg: 'bg-amber-100 dark:bg-amber-900/40',
+   101→   101→    text: 'text-amber-700 dark:text-amber-300',
+   102→   102→    dot: 'bg-amber-500',
+   103→   103→  },
+   104→   104→  interview: {
+   105→   105→    label: 'Interview',
+   106→   106→    bg: 'bg-emerald-100 dark:bg-emerald-900/40',
+   107→   107→    text: 'text-emerald-700 dark:text-emerald-300',
+   108→   108→    dot: 'bg-emerald-500',
+   109→   109→  },
+   110→   110→  assessment: {
+   111→   111→    label: 'Assessment',
+   112→   112→    bg: 'bg-purple-100 dark:bg-purple-900/40',
+   113→   113→    text: 'text-purple-700 dark:text-purple-300',
+   114→   114→    dot: 'bg-purple-500',
+   115→   115→  },
+   116→   116→  offer: {
+   117→   117→    label: 'Offer',
+   118→   118→    bg: 'bg-green-100 dark:bg-green-900/40',
+   119→   119→    text: 'text-green-700 dark:text-green-300',
+   120→   120→    dot: 'bg-green-500',
+   121→   121→  },
+   122→   122→  rejected: {
+   123→   123→    label: 'Rejected',
+   124→   124→    bg: 'bg-red-100 dark:bg-red-900/40',
+   125→   125→    text: 'text-red-700 dark:text-red-300',
+   126→   126→    dot: 'bg-red-500',
+   127→   127→  },
+   128→   128→  ghosted: {
+   129→   129→    label: 'Ghosted',
+   130→   130→    bg: 'bg-gray-100 dark:bg-gray-800/40',
+   131→   131→    text: 'text-gray-600 dark:text-gray-400',
+   132→   132→    dot: 'bg-gray-400',
+   133→   133→  },
+   134→   134→};
+   135→   135→
+   136→   136→const ALL_STATUSES: (ApplicationStatus | 'all')[] = [
+   137→   137→  'all',
+   138→   138→  'submitted',
+   139→   139→  'reviewing',
+   140→   140→  'interview',
+   141→   141→  'assessment',
+   142→   142→  'offer',
+   143→   143→  'rejected',
+   144→   144→  'ghosted',
+   145→   145→];
+   146→   146→
+   147→   147→// Deterministic hue per company name for avatar colour
+   148→   148→function companyHue(name: string): string {
+   149→   149→  let hash = 0;
+   150→   150→  for (let i = 0; i < name.length; i++) {
+   151→   151→    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+   152→   152→  }
+   153→   153→  const hue = Math.abs(hash) % 360;
+   154→   154→  return `hsl(${hue}, 55%, 50%)`;
+   155→   155→}
+   156→   156→
+   157→   157→// ---------------------------------------------------------------------------
+   158→   158→// Sub‑components
+   159→   159→// ---------------------------------------------------------------------------
+   160→   160→
+   161→   161→function CircularAtsScore({ score }: { score: number }) {
+   162→   162→  const radius = 18;
+   163→   163→  const circumference = 2 * Math.PI * radius;
+   164→   164→  const offset = circumference - (score / 100) * circumference;
+   165→   165→
+   166→   166→  const colour =
+   167→   167→    score >= 80
+   168→   168→      ? 'text-emerald-500'
+   169→   169→      : score >= 60
+   170→   170→        ? 'text-amber-500'
+   171→   171→        : 'text-red-500';
+   172→   172→
+   173→   173→  return (
+   174→   174→    <div className="relative inline-flex size-10 items-center justify-center">
+   175→   175→      <svg className="size-10 -rotate-90" viewBox="0 0 44 44">
+   176→   176→        <circle
+   177→   177→          cx="22"
+   178→   178→          cy="22"
+   179→   179→          r={radius}
+   180→   180→          fill="none"
+   181→   181→          stroke="currentColor"
+   182→   182→          strokeWidth="3"
+   183→   183→          className="text-muted/30"
+   184→   184→        />
+   185→   185→        <circle
+   186→   186→          cx="22"
+   187→   187→          cy="22"
+   188→   188→          r={radius}
+   189→   189→          fill="none"
+   190→   190→          stroke="currentColor"
+   191→   191→          strokeWidth="3"
+   192→   192→          strokeLinecap="round"
+   193→   193→          strokeDasharray={circumference}
+   194→   194→          strokeDashoffset={offset}
+   195→   195→          className={colour}
+   196→   196→        />
+   197→   197→      </svg>
+   198→   198→      <span className={`absolute text-[10px] font-bold ${colour}`}>
+   199→   199→        {score}
+   200→   200→      </span>
+   201→   201→    </div>
+   202→   202→  );
+   203→   203→}
+   204→   204→
+   205→   205→function ApplicationCard({ app }: { app: Application }) {
+   206→   206→  const [expanded, setExpanded] = useState(false);
+   207→   207→  const cfg = STATUS_CONFIG[app.status];
+   208→   208→
+   209→   209→  return (
+   210→   210→    <div className="transition-[opacity,transform] duration-200 ease-out animate-in fade-in slide-in-from-bottom-3">
+   211→   211→      <Card className="overflow-hidden py-0 gap-0 transition-shadow hover:shadow-md">
+   212→   212→        {/* Main row */}
+   213→   213→        <div
+   214→   214→          className="flex items-center gap-4 p-4 cursor-pointer select-none"
+   215→   215→          onClick={() => setExpanded((v) => !v)}
+   216→   216→          role="button"
+   217→   217→          tabIndex={0}
+   218→   218→          aria-expanded={expanded}
+   219→   219→          onKeyDown={(e) => {
+   220→   220→            if (e.key === 'Enter' || e.key === ' ') {
+   221→   221→              e.preventDefault();
+   222→   222→              setExpanded((v) => !v);
+   223→   223→            }
+   224→   224→          }}
+   225→   225→        >
+   226→   226→          {/* Left: logo + info */}
+   227→   227→          <div className="flex items-center gap-3 min-w-0 flex-shrink-0">
+   228→   228→            <Avatar className="size-10 rounded-lg">
+   229→   229→              <AvatarFallback
+   230→   230→                className="rounded-lg text-white font-semibold text-sm"
+   231→   231→                style={{ backgroundColor: companyHue(app.companyName) }}
+   232→   232→              >
+   233→   233→                {app.companyName.charAt(0).toUpperCase()}
+   234→   234→              </AvatarFallback>
+   235→   235→            </Avatar>
+   236→   236→            <div className="min-w-0">
+   237→   237→              <p className="font-medium text-sm leading-tight truncate">
+   238→   238→                {app.jobTitle}
+   239→   239→              </p>
+   240→   240→              <p className="text-xs text-muted-foreground truncate">
+   241→   241→                {app.companyName}
+   242→   242→              </p>
+   243→   243→            </div>
+   244→   244→          </div>
+   245→   245→
+   246→   246→          {/* Middle: status + ats + date */}
+   247→   247→          <div className="flex items-center gap-4 flex-1 justify-end flex-wrap">
+   248→   248→            <Badge
+   249→   249→              variant="outline"
+   250→   250→              className={`${cfg.bg} ${cfg.text} border-0 gap-1.5`}
+   251→   251→            >
+   252→   252→              <span className={`size-1.5 rounded-full ${cfg.dot}`} />
+   253→   253→              {cfg.label}
+   254→   254→            </Badge>
+   255→   255→            <CircularAtsScore score={app.atsScore} />
+   256→   256→            <span className="text-xs text-muted-foreground whitespace-nowrap flex items-center gap-1">
+   257→   257→              <Calendar className="size-3" />
+   258→   258→              {app.appliedDate}
+   259→   259→            </span>
+   260→   260→          </div>
+   261→   261→
+   262→   262→          {/* Expand toggle */}
+   263→   263→          <div className="ml-1">
+   264→   264→            {expanded ? (
+   265→   265→              <ChevronUp className="size-4 text-muted-foreground" />
+   266→   266→            ) : (
+   267→   267→              <ChevronDown className="size-4 text-muted-foreground" />
+   268→   268→            )}
+   269→   269→          </div>
+   270→   270→        </div>
+   271→   271→
+   272→   272→        {/* Expanded details — CSS grid‑row transition for height animation */}
+   273→   273→        <div
+   274→   274→          className={
+   275→   275→            expanded
+   276→   276→              ? 'grid transition-[grid-template-rows] duration-250 ease-in-out'
+   277→   277→              : 'grid transition-[grid-template-rows] duration-250 ease-in-out'
+   278→   278→          }
+   279→   279→          style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}
+   280→   280→        >
+   281→   281→          <div className="overflow-hidden">
+   282→   282→            <div>
+   283→   283→              <Separator />
+   284→   284→              <CardContent className="p-4 space-y-4">
+   285→   285→                {/* Actions */}
+   286→   286→                <div className="flex flex-wrap gap-2">
+   287→   287→                  {app.jobUrl && (
+   288→   288→                    <Button variant="outline" size="sm" asChild>
+   289→   289→                      <a
+   290→   290→                        href={app.jobUrl}
+   291→   291→                        target="_blank"
+   292→   292→                        rel="noopener noreferrer"
+   293→   293→                        onClick={(e) => e.stopPropagation()}
+   294→   294→                      >
+   295→   295→                        <ExternalLink className="size-3.5 mr-1.5" />
+   296→   296→                        View Job
+   297→   297→                      </a>
+   298→   298→                    </Button>
+   299→   299→                  )}
+   300→   300→                  <Button variant="outline" size="sm">
+   301→   301→                    <FileText className="size-3.5 mr-1.5" />
+   302→   302→                    View Resume
+   303→   303→                  </Button>
+   304→   304→                  {app.followUpEligible && (
+   305→   305→                    <Button variant="secondary" size="sm">
+   306→   306→                      <MessageSquare className="size-3.5 mr-1.5" />
+   307→   307→                      Follow Up
+   308→   308→                    </Button>
+   309→   309→                  )}
+   310→   310→                </div>
+   311→   311→
+   312→   312→                {/* Cover Letter */}
+   313→   313→                {app.coverLetter && (
+   314→   314→                  <div className="space-y-1">
+   315→   315→                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+   316→   316→                      Cover Letter
+   317→   317→                    </h4>
+   318→   318→                    <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3">
+   319→   319→                      {app.coverLetter}
+   320→   320→                    </p>
+   321→   321→                  </div>
+   322→   322→                )}
+   323→   323→
+   324→   324→                {/* Notes */}
+   325→   325→                {app.notes && (
+   326→   326→                  <div className="space-y-1">
+   327→   327→                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+   328→   328→                      Notes
+   329→   329→                    </h4>
+   330→   330→                    <p className="text-sm text-muted-foreground leading-relaxed">
+   331→   331→                      {app.notes}
+   332→   332→                    </p>
+   333→   333→                  </div>
+   334→   334→                )}
+   335→   335→
+   336→   336→                {/* Recruiter Info */}
+   337→   337→                {app.recruiterName && (
+   338→   338→                  <div className="space-y-1">
+   339→   339→                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+   340→   340→                      Recruiter
+   341→   341→                    </h4>
+   342→   342→                    <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+   343→   343→                      <span className="flex items-center gap-1">
+   344→   344→                        <User className="size-3.5" />
+   345→   345→                        {app.recruiterName}
+   346→   346→                      </span>
+   347→   347→                      {app.recruiterEmail && (
+   348→   348→                        <span className="flex items-center gap-1">
+   349→   349→                          <Mail className="size-3.5" />
+   350→   350→                          {app.recruiterEmail}
+   351→   351→                        </span>
+   352→   352→                      )}
+   353→   353→                      {app.recruiterPhone && (
+   354→   354→                        <span className="flex items-center gap-1">
+   355→   355→                          <Phone className="size-3.5" />
+   356→   356→                          {app.recruiterPhone}
+   357→   357→                        </span>
+   358→   358→                      )}
+   359→   359→                    </div>
+   360→   360→                  </div>
+   361→   361→                )}
+   362→   362→
+   363→   363→                {/* Feedback (if rejected) */}
+   364→   364→                {app.feedback && (
+   365→   365→                  <div className="space-y-1">
+   366→   366→                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+   367→   367→                      <XCircle className="size-3.5" />
+   368→   368→                      Feedback
+   369→   369→                    </h4>
+   370→   370→                    <p className="text-sm text-muted-foreground leading-relaxed">
+   371→   371→                      {app.feedback}
+   372→   372→                    </p>
+   373→   373→                  </div>
+   374→   374→                )}
+   375→   375→
+   376→   376→                {/* Timeline */}
+   377→   377→                {app.timeline && app.timeline.length > 0 && (
+   378→   378→                  <div className="space-y-2">
+   379→   379→                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+   380→   380→                      Timeline
+   381→   381→                    </h4>
+   382→   382→                    <div className="relative pl-4 space-y-3">
+   383→   383→                      {/* Vertical line */}
+   384→   384→                      <div className="absolute left-[7px] top-1 bottom-1 w-px bg-border" />
+   385→   385→                      {app.timeline.map((event, idx) => {
+   386→   386→                        const evCfg =
+   387→   387→                          STATUS_CONFIG[
+   388→   388→                            event.status as ApplicationStatus
+   389→   389→                          ] ?? STATUS_CONFIG.submitted;
+   390→   390→                        const isLast = idx === app.timeline.length - 1;
+   391→   391→                        return (
+   392→   392→                          <div key={idx} className="relative flex items-start gap-2">
+   393→   393→                            <span
+   394→   394→                              className={`absolute -left-4 top-0.5 size-3 rounded-full border-2 border-background ${evCfg.dot}`}
+   395→   395→                            />
+   396→   396→                            <div className="flex-1 min-w-0">
+   397→   397→                              <div className="flex items-center gap-2 flex-wrap">
+   398→   398→                                <span className="text-sm font-medium">
+   399→   399→                                  {event.status}
+   400→   400→                                </span>
+   401→   401→                                <span className="text-xs text-muted-foreground">
+   402→   402→                                  {event.date}
+   403→   403→                                </span>
+   404→   404→                              </div>
+   405→   405→                              {event.note && !isLast && (
+   406→   406→                                <p className="text-xs text-muted-foreground mt-0.5">
+   407→   407→                                  {event.note}
+   408→   408→                                </p>
+   409→   409→                              )}
+   410→   410→                            </div>
+   411→   411→                          </div>
+   412→   412→                        );
+   413→   413→                      })}
+   414→   414→                    </div>
+   415→   415→                  </div>
+   416→   416→                )}
+   417→   417→              </CardContent>
+   418→   418→            </div>
+   419→   419→          </div>
+   420→   420→        </div>
+   421→   421→      </Card>
+   422→   422→    </div>
+   423→   423→  );
+   424→   424→}
+   425→   425→
+   426→   426→function SkeletonCard() {
+   427→   427→  return (
+   428→   428→    <Card className="py-0 gap-0">
+   429→   429→      <div className="flex items-center gap-4 p-4">
+   430→   430→        <Skeleton className="size-10 rounded-lg" />
+   431→   431→        <div className="space-y-2 flex-1">
+   432→   432→          <Skeleton className="h-4 w-48" />
+   433→   433→          <Skeleton className="h-3 w-32" />
+   434→   434→        </div>
+   435→   435→        <Skeleton className="h-6 w-20 rounded-full" />
+   436→   436→        <Skeleton className="size-10 rounded-full" />
+   437→   437→        <Skeleton className="h-3 w-16" />
+   438→   438→      </div>
+   439→   439→    </Card>
+   440→   440→  );
+   441→   441→}
+   442→   442→
+   443→   443→// ---------------------------------------------------------------------------
+   444→   444→// Pipeline View
+   445→   445→// ---------------------------------------------------------------------------
+   446→   446→
+   447→   447→function PipelineColumn({
+   448→   448→  status,
+   449→   449→  applications,
+   450→   450→}: {
+   451→   451→  status: ApplicationStatus;
+   452→   452→  applications: Application[];
+   453→   453→}) {
+   454→   454→  const cfg = STATUS_CONFIG[status];
+   455→   455→  return (
+   456→   456→    <div className="flex-shrink-0 w-72 space-y-3">
+   457→   457→      <div className="flex items-center gap-2 px-1">
+   458→   458→        <span className={`size-2 rounded-full ${cfg.dot}`} />
+   459→   459→        <h3 className="text-sm font-semibold">{cfg.label}</h3>
+   460→   460→        <Badge variant="secondary" className="ml-auto text-xs">
+   461→   461→          {applications.length}
+   462→   462→        </Badge>
+   463→   463→      </div>
+   464→   464→      <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+   465→   465→        <div>
+   466→   466→          {applications.map((app) => (
+   467→   467→            <div
+   468→   468→              key={app.id}
+   469→   469→              className="transition-[opacity,transform] duration-200 ease-out animate-in fade-in zoom-in-95"
+   470→   470→            >
+   471→   471→              <Card className="py-0 gap-0 p-3 space-y-2">
+   472→   472→                <div className="flex items-start gap-2">
+   473→   473→                  <Avatar className="size-8 rounded-md mt-0.5">
+   474→   474→                    <AvatarFallback
+   475→   475→                      className="rounded-md text-white font-semibold text-xs"
+   476→   476→                      style={{ backgroundColor: companyHue(app.companyName) }}
+   477→   477→                    >
+   478→   478→                      {app.companyName.charAt(0).toUpperCase()}
+   479→   479→                    </AvatarFallback>
+   480→   480→                  </Avatar>
+   481→   481→                  <div className="min-w-0 flex-1">
+   482→   482→                    <p className="text-sm font-medium truncate">
+   483→   483→                      {app.jobTitle}
+   484→   484→                    </p>
+   485→   485→                    <p className="text-xs text-muted-foreground truncate">
+   486→   486→                      {app.companyName}
+   487→   487→                    </p>
+   488→   488→                  </div>
+   489→   489→                </div>
+   490→   490→                <div className="flex items-center justify-between">
+   491→   491→                  <CircularAtsScore score={app.atsScore} />
+   492→   492→                  <span className="text-[11px] text-muted-foreground">
+   493→   493→                    {app.appliedDate}
+   494→   494→                  </span>
+   495→   495→                </div>
+   496→   496→              </Card>
+   497→   497→            </div>
+   498→   498→          ))}
+   499→   499→        </div>
+   500→   500→        {applications.length === 0 && (
+   501→   501→          <p className="text-xs text-muted-foreground text-center py-6">
+   502→   502→            No applications
+   503→   503→          </p>
+   504→   504→        )}
+   505→   505→      </div>
+   506→   506→    </div>
+   507→   507→  );
+   508→   508→}
+   509→   509→
+   510→   510→function PipelineView({ applications }: { applications: Application[] }) {
+   511→   511→  const statuses: ApplicationStatus[] = [
+   512→   512→    'submitted',
+   513→   513→    'reviewing',
+   514→   514→    'interview',
+   515→   515→    'assessment',
+   516→   516→    'offer',
+   517→   517→    'rejected',
+   518→   518→    'ghosted',
+   519→   519→  ];
+   520→   520→  return (
+   521→   521→    <ScrollArea className="w-full">
+   522→   522→      <div className="flex gap-4 pb-4 min-w-max px-1">
+   523→   523→        {statuses.map((s) => (
+   524→   524→          <PipelineColumn
+   525→   525→            key={s}
+   526→   526→            status={s}
+   527→   527→            applications={applications.filter((a) => a.status === s)}
+   528→   528→          />
+   529→   529→        ))}
+   530→   530→      </div>
+   531→   531→      <ScrollBar orientation="horizontal" />
+   532→   532→    </ScrollArea>
+   533→   533→  );
+   534→   534→}
+   535→   535→
+   536→   536→// ---------------------------------------------------------------------------
+   537→   537→// Stats Summary
+   538→   538→// ---------------------------------------------------------------------------
+   539→   539→
+   540→   540→function StatsSummary({ applications }: { applications: Application[] }) {
+   541→   541→  const total = applications.length;
+   542→   542→  const responded = applications.filter(
+   543→   543→    (a) =>
+   544→   544→      a.status === 'reviewing' ||
+   545→   545→      a.status === 'interview' ||
+   546→   546→      a.status === 'assessment' ||
+   547→   547→      a.status === 'offer' ||
+   548→   548→      a.status === 'rejected'
+   549→   549→  ).length;
+   550→   550→  const interviewed = applications.filter(
+   551→   551→    (a) =>
+   552→   552→      a.status === 'interview' ||
+   553→   553→      a.status === 'assessment' ||
+   554→   554→      a.status === 'offer'
+   555→   555→  ).length;
+   556→   556→  const offered = applications.filter(
+   557→   557→    (a) => a.status === 'offer'
+   558→   558→  ).length;
+   559→   559→
+   560→   560→  const stats = [
+   561→   561→    {
+   562→   562→      label: 'Total Applications',
+   563→   563→      value: total,
+   564→   564→      icon: Briefcase,
+   565→   565→      color: 'text-foreground',
+   566→   566→    },
+   567→   567→    {
+   568→   568→      label: 'Response Rate',
+   569→   569→      value: total > 0 ? `${Math.round((responded / total) * 100)}%` : '0%',
+   570→   570→      icon: TrendingUp,
+   571→   571→      color: 'text-teal-600 dark:text-teal-400',
+   572→   572→    },
+   573→   573→    {
+   574→   574→      label: 'Interview Rate',
+   575→   575→      value:
+   576→   576→        total > 0 ? `${Math.round((interviewed / total) * 100)}%` : '0%',
+   577→   577→      icon: Video,
+   578→   578→      color: 'text-emerald-600 dark:text-emerald-400',
+   579→   579→    },
+   580→   580→    {
+   581→   581→      label: 'Offer Rate',
+   582→   582→      value: total > 0 ? `${Math.round((offered / total) * 100)}%` : '0%',
+   583→   583→      icon: Award,
+   584→   584→      color: 'text-green-600 dark:text-green-400',
+   585→   585→    },
+   586→   586→  ];
+   587→   587→
+   588→   588→  return (
+   589→   589→    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+   590→   590→      {stats.map((s) => (
+   591→   591→        <Card key={s.label} className="py-0 gap-0">
+   592→   592→          <CardContent className="p-4 flex items-center gap-3">
+   593→   593→            <div
+   594→   594→              className={`rounded-lg bg-muted/60 p-2 ${s.color}`}
+   595→   595→            >
+   596→   596→              <s.icon className="size-4" />
+   597→   597→            </div>
+   598→   598→            <div>
+   599→   599→              <p className="text-lg font-bold leading-tight">{s.value}</p>
+   600→   600→              <p className="text-[11px] text-muted-foreground leading-tight">
+   601→   601→                {s.label}
+   602→   602→              </p>
+   603→   603→            </div>
+   604→   604→          </CardContent>
+   605→   605→        </Card>
+   606→   606→      ))}
+   607→   607→    </div>
+   608→   608→  );
+   609→   609→}
+   610→   610→
+   611→   611→// ---------------------------------------------------------------------------
+   612→   612→// Main Panel
+   613→   613→// ---------------------------------------------------------------------------
+   614→   614→
+   615→   615→export default function ApplicationsPanel() {
+   616→   616→  const [selectedFilter, setSelectedFilter] = useState<
+   617→   617→    ApplicationStatus | 'all'
+   618→   618→  >('all');
+   619→   619→  const [viewMode, setViewMode] = useState<'card' | 'pipeline'>('card');
+   620→   620→  const [applications, setApplications] = useState<Application[]>([]);
+   621→   621→  const [statusCounts, setStatusCounts] = useState<StatusCounts>({
+   622→   622→    all: 0,
+   623→   623→    submitted: 0,
+   624→   624→    reviewing: 0,
+   625→   625→    interview: 0,
+   626→   626→    assessment: 0,
+   627→   627→    offer: 0,
+   628→   628→    rejected: 0,
+   629→   629→    ghosted: 0,
+   630→   630→  });
+   631→   631→  const [loading, setLoading] = useState(true);
+   632→   632→
+   633→   633→  const fetchApplications = useCallback(async () => {
+   634→   634→    setLoading(true);
+   635→   635→    try {
+   636→   636→      const query =
+   637→   637→        selectedFilter === 'all' ? '' : `?status=${selectedFilter}`;
+   638→   638→      const res = await fetch(`/api/applications${query}`);
+   639→   639→      if (!res.ok) throw new Error('Failed to fetch applications');
+   640→   640→      const data = await res.json();
+   641→   641→
+   642→   642→      const apps: Application[] = data.applications ?? data ?? [];
+   643→   643→      const counts: StatusCounts = data.counts ?? {
+   644→   644→        all: 0,
+   645→   645→        submitted: 0,
+   646→   646→        reviewing: 0,
+   647→   647→        interview: 0,
+   648→   648→        assessment: 0,
+   649→   649→        offer: 0,
+   650→   650→        rejected: 0,
+   651→   651→        ghosted: 0,
+   652→   652→      };
+   653→   653→
+   654→   654→      // If counts not returned, compute them ourselves
+   655→   655→      if (!data.counts) {
+   656→   656→        const computed: Record<string, number> = {
+   657→   657→          all: apps.length,
+   658→   658→          submitted: 0,
+   659→   659→          reviewing: 0,
+   660→   660→          interview: 0,
+   661→   661→          assessment: 0,
+   662→   662→          offer: 0,
+   663→   663→          rejected: 0,
+   664→   664→          ghosted: 0,
+   665→   665→        };
+   666→   666→        for (const a of apps) {
+   667→   667→          if (computed[a.status] !== undefined) {
+   668→   668→            computed[a.status]++;
+   669→   669→          }
+   670→   670→        }
+   671→   671→        counts.all = computed.all;
+   672→   672→        counts.submitted = computed.submitted;
+   673→   673→        counts.reviewing = computed.reviewing;
+   674→   674→        counts.interview = computed.interview;
+   675→   675→        counts.assessment = computed.assessment;
+   676→   676→        counts.offer = computed.offer;
+   677→   677→        counts.rejected = computed.rejected;
+   678→   678→        counts.ghosted = computed.ghosted;
+   679→   679→      }
+   680→   680→
+   681→   681→      setApplications(apps);
+   682→   682→      setStatusCounts(counts);
+   683→   683→    } catch {
+   684→   684→      // On error, show empty state — silent fallback
+   685→   685→      setApplications([]);
+   686→   686→    } finally {
+   687→   687→      setLoading(false);
+   688→   688→    }
+   689→   689→  }, [selectedFilter]);
+   690→   690→
+   691→   691→  useEffect(() => {
+   692→   692→    fetchApplications();
+   693→   693→  }, [fetchApplications]);
+   694→   694→
+   695→   695→  const filteredApps = useMemo(() => {
+   696→   696→    if (selectedFilter === 'all') return applications;
+   697→   697→    return applications.filter((a) => a.status === selectedFilter);
+   698→   698→  }, [applications, selectedFilter]);
+   699→   699→
+   700→   700→  return (
+   701→   701→    <div className="flex flex-col gap-4 h-full">
+   702→   702→      {/* Header + View Toggle */}
+   703→   703→      <div className="flex items-center justify-between flex-wrap gap-3">
+   704→   704→        <h2 className="text-lg font-semibold flex items-center gap-2">
+   705→   705→          <Briefcase className="size-5" />
+   706→   706→          Applications
+   707→   707→        </h2>
+   708→   708→        <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
+   709→   709→          <Button
+   710→   710→            variant={viewMode === 'card' ? 'default' : 'ghost'}
+   711→   711→            size="sm"
+   712→   712→            className="h-7 px-2.5 text-xs"
+   713→   713→            onClick={() => setViewMode('card')}
+   714→   714→          >
+   715→   715→            <LayoutGrid className="size-3.5 mr-1" />
+   716→   716→            Card View
+   717→   717→          </Button>
+   718→   718→          <Button
+   719→   719→            variant={viewMode === 'pipeline' ? 'default' : 'ghost'}
+   720→   720→            size="sm"
+   721→   721→            className="h-7 px-2.5 text-xs"
+   722→   722→            onClick={() => setViewMode('pipeline')}
+   723→   723→          >
+   724→   724→            <Columns className="size-3.5 mr-1" />
+   725→   725→            Pipeline View
+   726→   726→          </Button>
+   727→   727→        </div>
+   728→   728→      </div>
+   729→   729→
+   730→   730→      {/* Status Filter Bar */}
+   731→   731→      <ScrollArea className="w-full">
+   732→   732→        <div className="flex gap-2 pb-2 min-w-max">
+   733→   733→          {ALL_STATUSES.map((s) => {
+   734→   734→            const isActive = selectedFilter === s;
+   735→   735→            const label =
+   736→   736→              s === 'all'
+   737→   737→                ? 'All'
+   738→   738→                : STATUS_CONFIG[s as ApplicationStatus]?.label ?? s;
+   739→   739→            const count =
+   740→   740→              s === 'all'
+   741→   741→                ? statusCounts.all
+   742→   742→                : statusCounts[s as ApplicationStatus] ?? 0;
+   743→   743→
+   744→   744→            return (
+   745→   745→              <Button
+   746→   746→                key={s}
+   747→   747→                variant={isActive ? 'default' : 'outline'}
+   748→   748→                size="sm"
+   749→   749→                className="h-8 text-xs gap-1.5 rounded-full"
+   750→   750→                onClick={() => setSelectedFilter(s)}
+   751→   751→              >
+   752→   752→                {label}
+   753→   753→                <Badge
+   754→   754→                  variant="secondary"
+   755→   755→                  className={`ml-0.5 h-5 min-w-5 px-1.5 text-[10px] ${
+   756→   756→                    isActive
+   757→   757→                      ? 'bg-primary-foreground/20 text-primary-foreground'
+   758→   758→                      : ''
+   759→   759→                  }`}
+   760→   760→                >
+   761→   761→                  {count}
+   762→   762→                </Badge>
+   763→   763→              </Button>
+   764→   764→            );
+   765→   765→          })}
+   766→   766→        </div>
+   767→   767→        <ScrollBar orientation="horizontal" />
+   768→   768→      </ScrollArea>
+   769→   769→
+   770→   770→      {/* Content */}
+   771→   771→      <div className="flex-1 min-h-0">
+   772→   772→        {loading ? (
+   773→   773→          <div className="space-y-3">
+   774→   774→            {Array.from({ length: 4 }).map((_, i) => (
+   775→   775→              <SkeletonCard key={i} />
+   776→   776→            ))}
+   777→   777→          </div>
+   778→   778→        ) : filteredApps.length === 0 ? (
+   779→   779→          <div className="flex flex-col items-center justify-center py-16 text-center">
+   780→   780→            <div className="rounded-full bg-muted p-4 mb-4">
+   781→   781→              <Briefcase className="size-8 text-muted-foreground" />
+   782→   782→            </div>
+   783→   783→            <h3 className="font-medium text-sm">No applications found</h3>
+   784→   784→            <p className="text-xs text-muted-foreground mt-1">
+   785→   785→              {selectedFilter === 'all'
+   786→   786→                ? 'Start tracking your job applications.'
+   787→   787→                : `No applications with "${STATUS_CONFIG[selectedFilter as ApplicationStatus]?.label}" status.`}
+   788→   788→            </p>
+   789→   789→          </div>
+   790→   790→        ) : viewMode === 'card' ? (
+   791→   791→          <ScrollArea className="h-full">
+   792→   792→            <div className="space-y-3 pr-3">
+   793→   793→              {filteredApps.map((app) => (
+   794→   794→                <ApplicationCard key={app.id} app={app} />
+   795→   795→              ))}
+   796→   796→            </div>
+   797→   797→          </ScrollArea>
+   798→   798→        ) : (
+   799→   799→          <PipelineView applications={applications} />
+   800→   800→        )}
+   801→   801→      </div>
+   802→   802→
+   803→   803→      {/* Stats Summary */}
+   804→   804→      {!loading && applications.length > 0 && (
+   805→   805→        <Separator />
+   806→   806→      )}
+   807→   807→      {!loading && applications.length > 0 && (
+   808→   808→        <StatsSummary applications={applications} />
+   809→   809→      )}
+   810→   810→    </div>
+   811→   811→  );
+   812→   812→}

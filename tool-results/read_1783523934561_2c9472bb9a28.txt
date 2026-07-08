@@ -1,0 +1,659 @@
+     1→     1→'use client';
+     2→     2→
+     3→     3→import { useState, useEffect, useRef, useCallback } from 'react';
+     4→     4→import { toast } from 'sonner';
+     5→     5→import {
+     6→     6→  Sparkles,
+     7→     7→  Download,
+     8→     8→  Send,
+     9→     9→  FileText,
+    10→    10→  CheckCircle,
+    11→    11→  XCircle,
+    12→    12→  Lightbulb,
+    13→    13→  Target,
+    14→    14→  TrendingUp,
+    15→    15→  AlertTriangle,
+    16→    16→  Loader2,
+    17→    17→  Search,
+    18→    18→  ChevronDown,
+    19→    19→  FileUp,
+    20→    20→  Zap,
+    21→    21→} from 'lucide-react';
+    22→    22→import type { Job } from '@/lib/types';
+    23→    23→import { useAppStore } from '@/lib/store';
+    24→    24→
+    25→    25→import {
+    26→    26→  Card,
+    27→    27→  CardContent,
+    28→    28→  CardHeader,
+    29→    29→  CardTitle,
+    30→    30→} from '@/components/ui/card';
+    31→    31→import { Badge } from '@/components/ui/badge';
+    32→    32→import { Button } from '@/components/ui/button';
+    33→    33→import { Input } from '@/components/ui/input';
+    34→    34→import { Progress } from '@/components/ui/progress';
+    35→    35→import { Skeleton } from '@/components/ui/skeleton';
+    36→    36→import { Separator } from '@/components/ui/separator';
+    37→    37→import { ScrollArea } from '@/components/ui/scroll-area';
+    38→    38→import {
+    39→    39→  Dialog,
+    40→    40→  DialogContent,
+    41→    41→  DialogHeader,
+    42→    42→  DialogTitle,
+    43→    43→} from '@/components/ui/dialog';
+    44→    44→import {
+    45→    45→  Command,
+    46→    46→  CommandInput,
+    47→    47→  CommandList,
+    48→    48→  CommandItem,
+    49→    49→  CommandEmpty,
+    50→    50→  CommandGroup,
+    51→    51→} from '@/components/ui/command';
+    52→    52→
+    53→    53→/* -------------------------------------------------------------------------- */
+    54→    54→/*  Types                                                                     */
+    55→    55→/* -------------------------------------------------------------------------- */
+    56→    56→
+    57→    57→interface GeneratedResult {
+    58→    58→  jobTitle: string;
+    59→    59→  company: string;
+    60→    60→  atsScore: number;
+    61→    61→  tailoredSkills: string[];
+    62→    62→  missingKeywords: string[];
+    63→    63→  summary: string;
+    64→    64→  experienceRewrite: Array<{
+    65→    65→    company: string;
+    66→    66→    title: string;
+    67→    67→    description: string;
+    68→    68→    technologies: string[];
+    69→    69→  }>;
+    70→    70→  recommendations: string[];
+    71→    71→}
+    72→    72→
+    73→    73→/* -------------------------------------------------------------------------- */
+    74→    74→/*  Circular ATS score gauge                                                  */
+    75→    75→/* -------------------------------------------------------------------------- */
+    76→    76→
+    77→    77→function ATSGauge({ score, label, color }: { score: number; label: string; color: string }) {
+    78→    78→  const radius = 54;
+    79→    79→  const circumference = 2 * Math.PI * radius;
+    80→    80→  const offset = circumference - (score / 100) * circumference;
+    81→    81→
+    82→    82→  return (
+    83→    83→    <div className="flex flex-col items-center gap-1.5">
+    84→    84→      <div className="relative h-32 w-32">
+    85→    85→        <svg className="h-full w-full -rotate-90" viewBox="0 0 120 120">
+    86→    86→          <circle
+    87→    87→            cx="60"
+    88→    88→            cy="60"
+    89→    89→            r={radius}
+    90→    90→            fill="none"
+    91→    91→            stroke="currentColor"
+    92→    92→            strokeWidth="8"
+    93→    93→            className="text-muted/30"
+    94→    94→          />
+    95→    95→          <circle
+    96→    96→            cx="60"
+    97→    97→            cy="60"
+    98→    98→            r={radius}
+    99→    99→            fill="none"
+   100→   100→            stroke={color}
+   101→   101→            strokeWidth="8"
+   102→   102→            strokeLinecap="round"
+   103→   103→            strokeDasharray={circumference}
+   104→   104→            strokeDashoffset={offset}
+   105→   105→            className="transition-all duration-1000 ease-out"
+   106→   106→          />
+   107→   107→        </svg>
+   108→   108→        <div className="absolute inset-0 flex flex-col items-center justify-center">
+   109→   109→          <span className="text-3xl font-bold" style={{ color }}>{score}%</span>
+   110→   110→        </div>
+   111→   111→      </div>
+   112→   112→      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+   113→   113→    </div>
+   114→   114→  );
+   115→   115→}
+   116→   116→
+   117→   117→/* -------------------------------------------------------------------------- */
+   118→   118→/*  Skeleton for results                                                      */
+   119→   119→/* -------------------------------------------------------------------------- */
+   120→   120→
+   121→   121→function ResultsSkeleton() {
+   122→   122→  return (
+   123→   123→    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 animate-in fade-in duration-300">
+   124→   124→      <div className="space-y-4">
+   125→   125→        <Skeleton className="h-6 w-32" />
+   126→   126→        <div className="flex justify-center gap-8">
+   127→   127→          <Skeleton className="h-36 w-36 rounded-full" />
+   128→   128→          <Skeleton className="h-36 w-36 rounded-full" />
+   129→   129→        </div>
+   130→   130→        <Skeleton className="h-20 w-full" />
+   131→   131→        <Skeleton className="h-20 w-full" />
+   132→   132→      </div>
+   133→   133→      <div className="space-y-4">
+   134→   134→        <Skeleton className="h-6 w-40" />
+   135→   135→        <Skeleton className="h-24 w-full" />
+   136→   136→        <Skeleton className="h-32 w-full" />
+   137→   137→        <Skeleton className="h-40 w-full" />
+   138→   138→      </div>
+   139→   139→    </div>
+   140→   140→  );
+   141→   141→}
+   142→   142→
+   143→   143→/* -------------------------------------------------------------------------- */
+   144→   144→/*  Main component                                                            */
+   145→   145→/* -------------------------------------------------------------------------- */
+   146→   146→
+   147→   147→export default function ResumeGeneratorPanel() {
+   148→   148→  const { setActivePanel, setSelectedJob } = useAppStore();
+   149→   149→
+   150→   150→  /* ---- State ---- */
+   151→   151→  const [searchQuery, setSearchQuery] = useState('');
+   152→   152→  const [searchResults, setSearchResults] = useState<Job[]>([]);
+   153→   153→  const [isSearching, setIsSearching] = useState(false);
+   154→   154→  const [showDropdown, setShowDropdown] = useState(false);
+   155→   155→  const [selectedJob, setSelectedJobLocal] = useState<Job | null>(null);
+   156→   156→  const [isGenerating, setIsGenerating] = useState(false);
+   157→   157→  const [result, setResult] = useState<GeneratedResult | null>(null);
+   158→   158→  const [coverLetterOpen, setCoverLetterOpen] = useState(false);
+   159→   159→
+   160→   160→  const dropdownRef = useRef<HTMLDivElement>(null);
+   161→   161→  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+   162→   162→
+   163→   163→  /* ---- Close dropdown on outside click ---- */
+   164→   164→  useEffect(() => {
+   165→   165→    function handleClickOutside(e: MouseEvent) {
+   166→   166→      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+   167→   167→        setShowDropdown(false);
+   168→   168→      }
+   169→   169→    }
+   170→   170→    document.addEventListener('mousedown', handleClickOutside);
+   171→   171→    return () => document.removeEventListener('mousedown', handleClickOutside);
+   172→   172→  }, []);
+   173→   173→
+   174→   174→  /* ---- Search jobs ---- */
+   175→   175→  const handleSearch = useCallback((query: string) => {
+   176→   176→    setSearchQuery(query);
+   177→   177→
+   178→   178→    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+   179→   179→
+   180→   180→    if (!query.trim()) {
+   181→   181→      setSearchResults([]);
+   182→   182→      setShowDropdown(false);
+   183→   183→      return;
+   184→   184→    }
+   185→   185→
+   186→   186→    setIsSearching(true);
+   187→   187→    setShowDropdown(true);
+   188→   188→
+   189→   189→    searchTimeoutRef.current = setTimeout(async () => {
+   190→   190→      try {
+   191→   191→        const res = await fetch(`/api/jobs?search=${encodeURIComponent(query)}&limit=8`);
+   192→   192→        if (res.ok) {
+   193→   193→          const data = await res.json();
+   194→   194→          setSearchResults(data.jobs || []);
+   195→   195→        }
+   196→   196→      } catch {
+   197→   197→        toast.error('Failed to search jobs');
+   198→   198→      } finally {
+   199→   199→        setIsSearching(false);
+   200→   200→      }
+   201→   201→    }, 300);
+   202→   202→  }, []);
+   203→   203→
+   204→   204→  /* ---- Select a job ---- */
+   205→   205→  const handleSelectJob = useCallback((job: Job) => {
+   206→   206→    setSelectedJobLocal(job);
+   207→   207→    setSearchQuery('');
+   208→   208→    setSearchResults([]);
+   209→   209→    setShowDropdown(false);
+   210→   210→    setResult(null);
+   211→   211→  }, []);
+   212→   212→
+   213→   213→  /* ---- Generate resume ---- */
+   214→   214→  const handleGenerate = useCallback(async () => {
+   215→   215→    if (!selectedJob) return;
+   216→   216→
+   217→   217→    setIsGenerating(true);
+   218→   218→    setResult(null);
+   219→   219→
+   220→   220→    try {
+   221→   221→      const res = await fetch('/api/generate-resume', {
+   222→   222→        method: 'POST',
+   223→   223→        headers: { 'Content-Type': 'application/json' },
+   224→   224→        body: JSON.stringify({ jobId: selectedJob.id }),
+   225→   225→      });
+   226→   226→
+   227→   227→      if (res.ok) {
+   228→   228→        const data = await res.json();
+   229→   229→        setResult(data);
+   230→   230→        toast.success('ATS-optimized resume generated successfully!');
+   231→   231→      } else {
+   232→   232→        toast.error('Failed to generate resume');
+   233→   233→      }
+   234→   234→    } catch {
+   235→   235→      toast.error('Failed to generate resume');
+   236→   236→    } finally {
+   237→   237→      setIsGenerating(false);
+   238→   238→    }
+   239→   239→  }, [selectedJob]);
+   240→   240→
+   241→   241→  /* ---- Apply to job ---- */
+   242→   242→  const handleApply = useCallback(() => {
+   243→   243→    if (!selectedJob) return;
+   244→   244→    setSelectedJob(selectedJob);
+   245→   245→    setActivePanel('applications');
+   246→   246→    toast.success('Switched to applications');
+   247→   247→  }, [selectedJob, setSelectedJob, setActivePanel]);
+   248→   248→
+   249→   249→  /* ---- Mock cover letter ---- */
+   250→   250→  const mockCoverLetter = result
+   251→   251→    ? `Dear ${result.company} Hiring Team,\n\nI am excited to apply for the ${result.jobTitle} position at ${result.company}. With my extensive background in AI/ML engineering and hands-on experience with the technologies your team relies on, I am confident I can make a meaningful contribution from day one.\n\nMy experience building production-ready AI systems—including RAG pipelines, NLP models, and prompt engineering frameworks—directly aligns with the requirements of this role. I have a proven track record of delivering high-impact solutions that improve user satisfaction and system performance.\n\nI would welcome the opportunity to discuss how my skills and experience can support ${result.company}'s mission. Thank you for considering my application.\n\nBest regards,\nAlex Chen`
+   252→   252→    : '';
+   253→   253→
+   254→   254→  /* ---- Render ---- */
+   255→   255→  return (
+   256→   256→    <div className="space-y-6">
+   257→   257→      {/* Job Selector */}
+   258→   258→      <Card>
+   259→   259→        <CardHeader className="pb-3 px-4 pt-4">
+   260→   260→          <CardTitle className="text-base font-semibold flex items-center gap-2">
+   261→   261→            <Search className="h-4 w-4" />
+   262→   262→            Select a Job
+   263→   263→          </CardTitle>
+   264→   264→        </CardHeader>
+   265→   265→        <CardContent className="px-4 pb-4">
+   266→   266→          <div ref={dropdownRef} className="relative">
+   267→   267→            <div className="relative">
+   268→   268→              <Input
+   269→   269→                placeholder="Search jobs by title, company, or skill..."
+   270→   270→                value={searchQuery}
+   271→   271→                onChange={(e) => handleSearch(e.target.value)}
+   272→   272→                onFocus={() => searchQuery.trim() && setShowDropdown(true)}
+   273→   273→                className="pr-9"
+   274→   274→              />
+   275→   275→              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+   276→   276→            </div>
+   277→   277→
+   278→   278→            {/* Dropdown */}
+   279→   279→            {showDropdown && (
+   280→   280→              <div className="absolute z-50 mt-1.5 w-full rounded-lg border bg-popover shadow-md">
+   281→   281→                {isSearching ? (
+   282→   282→                  <div className="p-4 flex items-center justify-center">
+   283→   283→                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+   284→   284→                    <span className="ml-2 text-sm text-muted-foreground">Searching...</span>
+   285→   285→                  </div>
+   286→   286→                ) : searchResults.length > 0 ? (
+   287→   287→                  <Command shouldFilter={false}>
+   288→   288→                    <CommandList className="max-h-72">
+   289→   289→                      <CommandGroup>
+   290→   290→                        {searchResults.map((job) => (
+   291→   291→                          <CommandItem
+   292→   292→                            key={job.id}
+   293→   293→                            value={job.id}
+   294→   294→                            onSelect={() => handleSelectJob(job)}
+   295→   295→                            className="flex items-center justify-between gap-2 px-3 py-2.5 cursor-pointer"
+   296→   296→                          >
+   297→   297→                            <div className="min-w-0 flex-1">
+   298→   298→                              <p className="text-sm font-medium truncate">{job.title}</p>
+   299→   299→                              <p className="text-xs text-muted-foreground truncate">
+   300→   300→                                {job.company}
+   301→   301→                                {job.location && ` · ${job.location}`}
+   302→   302→                                {job.remote && ' · Remote'}
+   303→   303→                              </p>
+   304→   304→                            </div>
+   305→   305→                            <Badge
+   306→   306→                              variant={
+   307→   307→                                (job.matchScore ?? 0) >= 85
+   308→   308→                                  ? 'default'
+   309→   309→                                  : (job.matchScore ?? 0) >= 70
+   310→   310→                                    ? 'secondary'
+   311→   311→                                    : 'outline'
+   312→   312→                              }
+   313→   313→                              className="shrink-0 text-xs"
+   314→   314→                            >
+   315→   315→                              {job.matchScore ?? 0}% match
+   316→   316→                            </Badge>
+   317→   317→                          </CommandItem>
+   318→   318→                        ))}
+   319→   319→                      </CommandGroup>
+   320→   320→                    </CommandList>
+   321→   321→                  </Command>
+   322→   322→                ) : (
+   323→   323→                  <div className="p-4 text-center text-sm text-muted-foreground">
+   324→   324→                    No jobs found. Try a different search term.
+   325→   325→                  </div>
+   326→   326→                )}
+   327→   327→              </div>
+   328→   328→            )}
+   329→   329→          </div>
+   330→   330→        </CardContent>
+   331→   331→      </Card>
+   332→   332→
+   333→   333→      {/* Selected Job Info */}
+   334→   334→      {selectedJob && (
+   335→   335→        <Card className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+   336→   336→          <CardHeader className="pb-3 px-4 pt-4">
+   337→   337→            <div className="flex items-start justify-between gap-2">
+   338→   338→              <div>
+   339→   339→                <CardTitle className="text-lg font-semibold">{selectedJob.title}</CardTitle>
+   340→   340→                <p className="text-sm text-muted-foreground mt-0.5">{selectedJob.company}</p>
+   341→   341→              </div>
+   342→   342→              <Badge variant="outline" className="shrink-0 text-xs capitalize">
+   343→   343→                {selectedJob.source}
+   344→   344→              </Badge>
+   345→   345→            </div>
+   346→   346→          </CardHeader>
+   347→   347→          <CardContent className="px-4 pb-4 space-y-3">
+   348→   348→            {selectedJob.requirements && (
+   349→   349→              <div>
+   350→   350→                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5">
+   351→   351→                  Key Requirements
+   352→   352→                </p>
+   353→   353→                <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3">
+   354→   354→                  {selectedJob.requirements}
+   355→   355→                </p>
+   356→   356→              </div>
+   357→   357→            )}
+   358→   358→            <div>
+   359→   359→              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5">
+   360→   360→                Required Skills
+   361→   361→              </p>
+   362→   362→              <div className="flex flex-wrap gap-1.5">
+   363→   363→                {selectedJob.skills.map((skill) => (
+   364→   364→                  <Badge key={skill} variant="secondary" className="text-xs">
+   365→   365→                    {skill}
+   366→   366→                  </Badge>
+   367→   367→                ))}
+   368→   368→              </div>
+   369→   369→            </div>
+   370→   370→          </CardContent>
+   371→   371→        </Card>
+   372→   372→      )}
+   373→   373→
+   374→   374→      {/* Generate Button */}
+   375→   375→      {selectedJob && !result && !isGenerating && (
+   376→   376→        <Button
+   377→   377→          size="lg"
+   378→   378→          className="w-full gap-2 h-12 text-base font-semibold"
+   379→   379→          onClick={handleGenerate}
+   380→   380→        >
+   381→   381→          <Sparkles className="h-5 w-5" />
+   382→   382→          Generate ATS-Optimized Resume
+   383→   383→        </Button>
+   384→   384→      )}
+   385→   385→
+   386→   386→      {/* Generating state */}
+   387→   387→      {isGenerating && (
+   388→   388→        <Card className="animate-in fade-in duration-300">
+   389→   389→          <CardContent className="p-8 flex flex-col items-center justify-center gap-4">
+   390→   390→            <div className="relative">
+   391→   391→              <div className="h-16 w-16 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
+   392→   392→              <Sparkles className="h-6 w-6 absolute inset-0 m-auto text-primary" />
+   393→   393→            </div>
+   394→   394→            <div className="text-center">
+   395→   395→              <p className="font-medium">Generating optimized resume...</p>
+   396→   396→              <p className="text-sm text-muted-foreground mt-1">
+   397→   397→                Analyzing job requirements and tailoring your resume
+   398→   398→              </p>
+   399→   399→            </div>
+   400→   400→          </CardContent>
+   401→   401→        </Card>
+   402→   402→      )}
+   403→   403→
+   404→   404→      {/* Results */}
+   405→   405→      {result && (
+   406→   406→        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-3 duration-500">
+   407→   407→          {/* Score comparison header */}
+   408→   408→          <Card>
+   409→   409→            <CardContent className="p-6">
+   410→   410→              <div className="flex items-center gap-2 mb-4">
+   411→   411→                <Target className="h-5 w-5 text-primary" />
+   412→   412→                <h3 className="text-base font-semibold">ATS Score Comparison</h3>
+   413→   413→              </div>
+   414→   414→              <div className="flex flex-col sm:flex-row items-center justify-center gap-8">
+   415→   415→                <ATSGauge score={76} label="Current Resume" color="#ef4444" />
+   416→   416→                <div className="flex flex-col items-center gap-1">
+   417→   417→                  <TrendingUp className="h-8 w-8 text-emerald-500" />
+   418→   418→                  <span className="text-xs text-muted-foreground">+18%</span>
+   419→   419→                </div>
+   420→   420→                <ATSGauge score={result.atsScore} label="Optimized" color="#10b981" />
+   421→   421→              </div>
+   422→   422→            </CardContent>
+   423→   423→          </Card>
+   424→   424→
+   425→   425→          {/* Split layout: ATS Analysis | Generated Resume Preview */}
+   426→   426→          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+   427→   427→            {/* Left - ATS Analysis */}
+   428→   428→            <Card>
+   429→   429→              <CardHeader className="pb-3 px-4 pt-4">
+   430→   430→                <CardTitle className="text-base font-semibold flex items-center gap-2">
+   431→   431→                  <Target className="h-4 w-4" />
+   432→   432→                  ATS Analysis
+   433→   433→                </CardTitle>
+   434→   434→              </CardHeader>
+   435→   435→              <CardContent className="px-4 pb-4 space-y-5">
+   436→   436→                {/* Missing Keywords */}
+   437→   437→                {result.missingKeywords.length > 0 && (
+   438→   438→                  <div>
+   439→   439→                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+   440→   440→                      <XCircle className="h-3.5 w-3.5 text-destructive" />
+   441→   441→                      Missing Keywords
+   442→   442→                    </p>
+   443→   443→                    <div className="flex flex-wrap gap-1.5">
+   444→   444→                      {result.missingKeywords.map((kw) => (
+   445→   445→                        <Badge key={kw} variant="destructive" className="text-xs font-normal bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-800">
+   446→   446→                          {kw}
+   447→   447→                        </Badge>
+   448→   448→                      ))}
+   449→   449→                    </div>
+   450→   450→                  </div>
+   451→   451→                )}
+   452→   452→
+   453→   453→                {/* Matched Skills */}
+   454→   454→                <div>
+   455→   455→                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+   456→   456→                    <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />
+   457→   457→                    Matched Skills
+   458→   458→                  </p>
+   459→   459→                  <div className="flex flex-wrap gap-1.5">
+   460→   460→                    {result.tailoredSkills.map((skill) => (
+   461→   461→                      <Badge
+   462→   462→                        key={skill}
+   463→   463→                        variant="outline"
+   464→   464→                        className="text-xs font-normal border-emerald-200 text-emerald-700 dark:border-emerald-800 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20"
+   465→   465→                      >
+   466→   466→                        {skill}
+   467→   467→                      </Badge>
+   468→   468→                    ))}
+   469→   469→                  </div>
+   470→   470→                </div>
+   471→   471→
+   472→   472→                {/* Score breakdown */}
+   473→   473→                <div className="space-y-2">
+   474→   474→                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">
+   475→   475→                    Score Breakdown
+   476→   476→                  </p>
+   477→   477→                  <div className="space-y-2.5">
+   478→   478→                    <div>
+   479→   479→                      <div className="flex justify-between text-xs mb-1">
+   480→   480→                        <span className="text-muted-foreground">Keyword Match</span>
+   481→   481→                        <span className="font-medium">{Math.min(98, result.atsScore + 3)}%</span>
+   482→   482→                      </div>
+   483→   483→                      <Progress value={Math.min(98, result.atsScore + 3)} className="h-1.5" />
+   484→   484→                    </div>
+   485→   485→                    <div>
+   486→   486→                      <div className="flex justify-between text-xs mb-1">
+   487→   487→                        <span className="text-muted-foreground">Experience Relevance</span>
+   488→   488→                        <span className="font-medium">{Math.min(95, result.atsScore - 2)}%</span>
+   489→   489→                      </div>
+   490→   490→                      <Progress value={Math.min(95, result.atsScore - 2)} className="h-1.5" />
+   491→   491→                    </div>
+   492→   492→                    <div>
+   493→   493→                      <div className="flex justify-between text-xs mb-1">
+   494→   494→                        <span className="text-muted-foreground">Format & Structure</span>
+   495→   495→                        <span className="font-medium">{Math.min(100, result.atsScore + 5)}%</span>
+   496→   496→                      </div>
+   497→   497→                      <Progress value={Math.min(100, result.atsScore + 5)} className="h-1.5" />
+   498→   498→                    </div>
+   499→   499→                  </div>
+   500→   500→                </div>
+   501→   501→              </CardContent>
+   502→   502→            </Card>
+   503→   503→
+   504→   504→            {/* Right - Generated Resume Preview */}
+   505→   505→            <Card>
+   506→   506→              <CardHeader className="pb-3 px-4 pt-4">
+   507→   507→                <CardTitle className="text-base font-semibold flex items-center gap-2">
+   508→   508→                  <FileText className="h-4 w-4" />
+   509→   509→                  Generated Resume Preview
+   510→   510→                </CardTitle>
+   511→   511→              </CardHeader>
+   512→   512→              <CardContent className="px-4 pb-4">
+   513→   513→                <ScrollArea className="max-h-[520px] pr-2">
+   514→   514→                  <div className="space-y-4">
+   515→   515→                    {/* Optimized Summary */}
+   516→   516→                    <div>
+   517→   517→                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5">
+   518→   518→                        Optimized Summary
+   519→   519→                      </p>
+   520→   520→                      <div className="rounded-lg bg-muted/50 p-3">
+   521→   521→                        <p className="text-sm leading-relaxed">{result.summary}</p>
+   522→   522→                      </div>
+   523→   523→                    </div>
+   524→   524→
+   525→   525→                    <Separator />
+   526→   526→
+   527→   527→                    {/* Rewritten Experience */}
+   528→   528→                    <div>
+   529→   529→                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
+   530→   530→                        Rewritten Experience
+   531→   531→                      </p>
+   532→   532→                      <div className="space-y-3">
+   533→   533→                        {result.experienceRewrite.map((exp, i) => (
+   534→   534→                          <div key={i} className="rounded-lg border p-3">
+   535→   535→                            <div className="flex items-center gap-2 mb-1">
+   536→   536→                              <BriefcaseIcon className="h-3.5 w-3.5 text-primary" />
+   537→   537→                              <span className="text-sm font-medium">{exp.title}</span>
+   538→   538→                              <span className="text-xs text-muted-foreground">@ {exp.company}</span>
+   539→   539→                            </div>
+   540→   540→                            <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3 mb-2">
+   541→   541→                              {exp.description}
+   542→   542→                            </p>
+   543→   543→                            <div className="flex flex-wrap gap-1">
+   544→   544→                              {exp.technologies.map((tech) => (
+   545→   545→                                <Badge key={tech} variant="outline" className="text-[10px] px-1.5 py-0">
+   546→   546→                                  {tech}
+   547→   547→                                </Badge>
+   548→   548→                              ))}
+   549→   549→                            </div>
+   550→   550→                          </div>
+   551→   551→                        ))}
+   552→   552→                      </div>
+   553→   553→                    </div>
+   554→   554→
+   555→   555→                    <Separator />
+   556→   556→
+   557→   557→                    {/* Recommendations */}
+   558→   558→                    <div>
+   559→   559→                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+   560→   560→                        <Lightbulb className="h-3.5 w-3.5 text-amber-500" />
+   561→   561→                        Recommendations
+   562→   562→                      </p>
+   563→   563→                      <ul className="space-y-2">
+   564→   564→                        {result.recommendations.map((rec, i) => (
+   565→   565→                          <li key={i} className="flex items-start gap-2 text-sm">
+   566→   566→                            <span className="shrink-0 flex items-center justify-center h-5 w-5 rounded-full bg-primary/10 text-primary text-[10px] font-bold mt-0.5">
+   567→   567→                              {i + 1}
+   568→   568→                            </span>
+   569→   569→                            <span className="text-muted-foreground leading-relaxed">{rec}</span>
+   570→   570→                          </li>
+   571→   571→                        ))}
+   572→   572→                      </ul>
+   573→   573→                    </div>
+   574→   574→                  </div>
+   575→   575→                </ScrollArea>
+   576→   576→              </CardContent>
+   577→   577→            </Card>
+   578→   578→          </div>
+   579→   579→
+   580→   580→          {/* Action Buttons */}
+   581→   581→          <div className="flex flex-col sm:flex-row gap-3">
+   582→   582→            <Button variant="outline" className="flex-1 gap-2" onClick={() => toast.info('Resume download prepared (simulated)')}>
+   583→   583→              <Download className="h-4 w-4" />
+   584→   584→              Download Resume
+   585→   585→            </Button>
+   586→   586→            <Button className="flex-1 gap-2" onClick={handleApply}>
+   587→   587→              <Send className="h-4 w-4" />
+   588→   588→              Apply to This Job
+   589→   589→            </Button>
+   590→   590→            <Button
+   591→   591→              variant="outline"
+   592→   592→              className="flex-1 gap-2"
+   593→   593→              onClick={() => setCoverLetterOpen(true)}
+   594→   594→            >
+   595→   595→              <FileText className="h-4 w-4" />
+   596→   596→              Generate Cover Letter
+   597→   597→            </Button>
+   598→   598→          </div>
+   599→   599→        </div>
+   600→   600→      )}
+   601→   601→
+   602→   602→      {/* Cover Letter Dialog */}
+   603→   603→      <Dialog open={coverLetterOpen} onOpenChange={setCoverLetterOpen}>
+   604→   604→        <DialogContent className="sm:max-w-2xl max-h-[85vh]">
+   605→   605→          <DialogHeader>
+   606→   606→            <DialogTitle className="flex items-center gap-2">
+   607→   607→              <FileText className="h-5 w-5" />
+   608→   608→              Generated Cover Letter
+   609→   609→              <Badge variant="secondary" className="text-xs">AI Generated</Badge>
+   610→   610→            </DialogTitle>
+   611→   611→          </DialogHeader>
+   612→   612→          <ScrollArea className="max-h-[60vh] pr-2">
+   613→   613→            <div className="rounded-lg bg-muted/50 p-4">
+   614→   614→              <pre className="text-sm text-foreground whitespace-pre-wrap font-[inherit] leading-relaxed">
+   615→   615→                {mockCoverLetter}
+   616→   616→              </pre>
+   617→   617→            </div>
+   618→   618→          </ScrollArea>
+   619→   619→          <div className="flex justify-end gap-2 pt-2">
+   620→   620→            <Button variant="outline" onClick={() => setCoverLetterOpen(false)}>
+   621→   621→              Close
+   622→   622→            </Button>
+   623→   623→            <Button className="gap-2" onClick={() => {
+   624→   624→              setCoverLetterOpen(false);
+   625→   625→              toast.success('Cover letter copied to clipboard (simulated)');
+   626→   626→            }}>
+   627→   627→              <Zap className="h-4 w-4" />
+   628→   628→              Copy to Clipboard
+   629→   629→            </Button>
+   630→   630→          </div>
+   631→   631→        </DialogContent>
+   632→   632→      </Dialog>
+   633→   633→    </div>
+   634→   634→  );
+   635→   635→}
+   636→   636→
+   637→   637→/* -------------------------------------------------------------------------- */
+   638→   638→/*  Tiny inline icon (avoid adding more imports)                              */
+   639→   639→/* -------------------------------------------------------------------------- */
+   640→   640→
+   641→   641→function BriefcaseIcon({ className }: { className?: string }) {
+   642→   642→  return (
+   643→   643→    <svg
+   644→   644→      xmlns="http://www.w3.org/2000/svg"
+   645→   645→      width="24"
+   646→   646→      height="24"
+   647→   647→      viewBox="0 0 24 24"
+   648→   648→      fill="none"
+   649→   649→      stroke="currentColor"
+   650→   650→      strokeWidth="2"
+   651→   651→      strokeLinecap="round"
+   652→   652→      strokeLinejoin="round"
+   653→   653→      className={className}
+   654→   654→    >
+   655→   655→      <rect width="20" height="14" x="2" y="7" rx="2" ry="2" />
+   656→   656→      <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+   657→   657→    </svg>
+   658→   658→  );
+   659→   659→}

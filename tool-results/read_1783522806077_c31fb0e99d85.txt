@@ -1,0 +1,796 @@
+     1→'use client';
+     2→
+     3→import { useState, useEffect, useCallback, useMemo } from 'react';
+     4→import { AnimatePresence, motion } from 'framer-motion';
+     5→import { formatDistanceToNow } from 'date-fns';
+     6→import {
+     7→  Search,
+     8→  MapPin,
+     9→  DollarSign,
+    10→  Clock,
+    11→  Briefcase,
+    12→  Star,
+    13→  RefreshCw,
+    14→  ExternalLink,
+    15→  FileText,
+    16→  CheckCircle,
+    17→  Zap,
+    18→  Loader2,
+    19→} from 'lucide-react';
+    20→import { Card, CardContent } from '@/components/ui/card';
+    21→import { Badge } from '@/components/ui/badge';
+    22→import { Button } from '@/components/ui/button';
+    23→import { Input } from '@/components/ui/input';
+    24→import {
+    25→  Dialog,
+    26→  DialogContent,
+    27→  DialogHeader,
+    28→  DialogTitle,
+    29→  DialogDescription,
+    30→} from '@/components/ui/dialog';
+    31→import { Switch } from '@/components/ui/switch';
+    32→import { Skeleton } from '@/components/ui/skeleton';
+    33→import {
+    34→  Select,
+    35→  SelectTrigger,
+    36→  SelectValue,
+    37→  SelectContent,
+    38→  SelectItem,
+    39→} from '@/components/ui/select';
+    40→import {
+    41→  Tooltip,
+    42→  TooltipContent,
+    43→  TooltipTrigger,
+    44→} from '@/components/ui/tooltip';
+    45→import { ScrollArea } from '@/components/ui/scroll-area';
+    46→import type { Job, JobSourceType } from '@/lib/types';
+    47→
+    48→// --- Constants ---
+    49→
+    50→const SOURCE_FILTER_OPTIONS: { value: string; label: string }[] = [
+    51→  { value: 'all', label: 'All' },
+    52→  { value: 'ai_training', label: 'AI Training' },
+    53→  { value: 'research_lab', label: 'Research Lab' },
+    54→  { value: 'big_tech', label: 'Big Tech' },
+    55→  { value: 'job_board', label: 'Job Board' },
+    56→  { value: 'remote', label: 'Remote' },
+    57→  { value: 'ats', label: 'ATS' },
+    58→  { value: 'startup', label: 'Startup' },
+    59→  { value: 'freelance', label: 'Freelance' },
+    60→];
+    61→
+    62→const SORT_OPTIONS = [
+    63→  { value: 'matchScore', label: 'Match Score' },
+    64→  { value: 'salary', label: 'Salary' },
+    65→  { value: 'date', label: 'Date Posted' },
+    66→] as const;
+    67→
+    68→type SortKey = (typeof SORT_OPTIONS)[number]['value'];
+    69→
+    70→// --- Color maps ---
+    71→
+    72→const sourceTypeBadgeClass: Record<string, string> = {
+    73→  ai_training:
+    74→    'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-400 dark:border-emerald-800',
+    75→  research_lab:
+    76→    'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/40 dark:text-purple-400 dark:border-purple-800',
+    77→  big_tech:
+    78→    'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/40 dark:text-orange-400 dark:border-orange-800',
+    79→  remote:
+    80→    'bg-teal-100 text-teal-700 border-teal-200 dark:bg-teal-900/40 dark:text-teal-400 dark:border-teal-800',
+    81→  ats:
+    82→    'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800/40 dark:text-slate-400 dark:border-slate-700',
+    83→  startup:
+    84→    'bg-pink-100 text-pink-700 border-pink-200 dark:bg-pink-900/40 dark:text-pink-400 dark:border-pink-800',
+    85→  job_board:
+    86→    'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700',
+    87→  freelance:
+    88→    'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/40 dark:text-amber-400 dark:border-amber-800',
+    89→};
+    90→
+    91→const sourceTypeLabel: Record<string, string> = {
+    92→  ai_training: 'AI Training',
+    93→  research_lab: 'Research',
+    94→  big_tech: 'Big Tech',
+    95→  remote: 'Remote',
+    96→  startup: 'Startup',
+    97→  job_board: 'Job Board',
+    98→  ats: 'ATS',
+    99→  freelance: 'Freelance',
+   100→};
+   101→
+   102→// --- Helpers ---
+   103→
+   104→function formatSalary(job: Job): string | null {
+   105→  const { salaryMin, salaryMax, salaryType } = job;
+   106→  if (!salaryMin && !salaryMax) return null;
+   107→  const min = salaryMin ?? 0;
+   108→  const max = salaryMax ?? 0;
+   109→  const fmt = (n: number) =>
+   110→    n >= 1000 ? `${Math.round(n / 1000)}K` : String(n);
+   111→  const suffix =
+   112→    salaryType === 'hourly' ? '/hr' : salaryType === 'monthly' ? '/mo' : '/yr';
+   113→  const prefix = salaryType === 'hourly' ? '$' : '$';
+   114→  if (min && max && min !== max) {
+   115→    return `${prefix}${fmt(min)}-${fmt(max)}${suffix}`;
+   116→  }
+   117→  const val = max || min;
+   118→  return `${prefix}${fmt(val)}${suffix}`;
+   119→}
+   120→
+   121→function relativeDate(dateStr?: string): string {
+   122→  if (!dateStr) return '';
+   123→  try {
+   124→    return formatDistanceToNow(new Date(dateStr), { addSuffix: true });
+   125→  } catch {
+   126→    return '';
+   127→  }
+   128→}
+   129→
+   130→function matchScoreColor(score: number): string {
+   131→  if (score > 85)
+   132→    return 'bg-emerald-100 text-emerald-700 ring-emerald-300 dark:bg-emerald-900/40 dark:text-emerald-400 dark:ring-emerald-700';
+   133→  if (score > 70)
+   134→    return 'bg-amber-100 text-amber-700 ring-amber-300 dark:bg-amber-900/40 dark:text-amber-400 dark:ring-amber-700';
+   135→  return 'bg-gray-100 text-gray-600 ring-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:ring-gray-600';
+   136→}
+   137→
+   138→// --- Scraping Result Type ---
+   139→
+   140→interface ScrapeResult {
+   141→  source: string;
+   142→  jobsFound: number;
+   143→  jobsNew: number;
+   144→}
+   145→
+   146→// --- Main Component ---
+   147→
+   148→export default function JobsPanel() {
+   149→  // Data state
+   150→  const [jobs, setJobs] = useState<Job[]>([]);
+   151→  const [loading, setLoading] = useState(true);
+   152→  const [error, setError] = useState<string | null>(null);
+   153→
+   154→  // Filter state
+   155→  const [searchQuery, setSearchQuery] = useState('');
+   156→  const [sourceFilter, setSourceFilter] = useState<string>('all');
+   157→  const [remoteOnly, setRemoteOnly] = useState(false);
+   158→  const [sortBy, setSortBy] = useState<SortKey>('matchScore');
+   159→
+   160→  // Scraping state
+   161→  const [scraping, setScraping] = useState(false);
+   162→  const [scrapeResults, setScrapeResults] = useState<ScrapeResult[]>([]);
+   163→  const [scrapeResultsVisible, setScrapeResultsVisible] = useState(false);
+   164→
+   165→  // Dialog state
+   166→  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+   167→  const [dialogOpen, setDialogOpen] = useState(false);
+   168→
+   169→  // --- Fetch jobs ---
+   170→
+   171→  const fetchJobs = useCallback(async () => {
+   172→    try {
+   173→      setLoading(true);
+   174→      setError(null);
+   175→      const res = await fetch('/api/jobs');
+   176→      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+   177→      const json: Job[] = await res.json();
+   178→      setJobs(json);
+   179→    } catch (err) {
+   180→      setError(err instanceof Error ? err.message : 'Failed to load jobs');
+   181→    } finally {
+   182→      setLoading(false);
+   183→    }
+   184→  }, []);
+   185→
+   186→  useEffect(() => {
+   187→    fetchJobs();
+   188→  }, [fetchJobs]);
+   189→
+   190→  // --- Filtering & Sorting ---
+   191→
+   192→  const filteredJobs = useMemo(() => {
+   193→    let result = [...jobs];
+   194→
+   195→    // Source filter
+   196→    if (sourceFilter !== 'all') {
+   197→      result = result.filter((j) => j.sourceType === sourceFilter);
+   198→    }
+   199→
+   200→    // Remote filter
+   201→    if (remoteOnly) {
+   202→      result = result.filter((j) => j.remote);
+   203→    }
+   204→
+   205→    // Search filter
+   206→    if (searchQuery.trim()) {
+   207→      const q = searchQuery.toLowerCase().trim();
+   208→      result = result.filter(
+   209→        (j) =>
+   210→          j.title.toLowerCase().includes(q) ||
+   211→          j.company.toLowerCase().includes(q) ||
+   212→          j.skills.some((s) => s.toLowerCase().includes(q))
+   213→      );
+   214→    }
+   215→
+   216→    // Sort
+   217→    result.sort((a, b) => {
+   218→      if (sortBy === 'matchScore') {
+   219→        return (b.matchScore ?? 0) - (a.matchScore ?? 0);
+   220→      }
+   221→      if (sortBy === 'salary') {
+   222→        return (b.salaryMax ?? 0) - (a.salaryMax ?? 0);
+   223→      }
+   224→      if (sortBy === 'date') {
+   225→        const dateA = a.postedAt ? new Date(a.postedAt).getTime() : 0;
+   226→        const dateB = b.postedAt ? new Date(b.postedAt).getTime() : 0;
+   227→        return dateB - dateA;
+   228→      }
+   229→      return 0;
+   230→    });
+   231→
+   232→    return result;
+   233→  }, [jobs, sourceFilter, remoteOnly, searchQuery, sortBy]);
+   234→
+   235→  // --- Scraping ---
+   236→
+   237→  let scrapeTimer: ReturnType<typeof setTimeout>;
+   238→
+   239→  async function handleScrape(aiTrainingOnly: boolean) {
+   240→    if (scraping) return;
+   241→    setScraping(true);
+   242→    setScrapeResultsVisible(false);
+   243→    setScrapeResults([]);
+   244→
+   245→    try {
+   246→      const res = await fetch('/api/scrape', {
+   247→        method: 'POST',
+   248→        headers: { 'Content-Type': 'application/json' },
+   249→        body: JSON.stringify({ aiTrainingOnly }),
+   250→      });
+   251→      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+   252→      const json = await res.json();
+   253→      setScrapeResults(json.results ?? []);
+   254→      setScrapeResultsVisible(true);
+   255→
+   256→      // Hide results after 5 seconds
+   257→      scrapeTimer = setTimeout(() => {
+   258→        setScrapeResultsVisible(false);
+   259→      }, 5000);
+   260→
+   261→      // Refresh jobs list
+   262→      fetchJobs();
+   263→    } catch {
+   264→      // Silently fail - scraping is simulated
+   265→    } finally {
+   266→      setScraping(false);
+   267→    }
+   268→  }
+   269→
+   270→  // --- Open job detail dialog ---
+   271→
+   272→  function openJobDetail(job: Job) {
+   273→    setSelectedJob(job);
+   274→    setDialogOpen(true);
+   275→  }
+   276→
+   277→  // --- Render ---
+   278→
+   279→  return (
+   280→    <div className="space-y-4">
+   281→      {/* ── Scraping Bar ── */}
+   282→      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+   283→        <div className="flex items-center gap-2">
+   284→          <Button
+   285→            size="sm"
+   286→            variant="outline"
+   287→            disabled={scraping}
+   288→            onClick={() => handleScrape(false)}
+   289→          >
+   290→            {scraping ? (
+   291→              <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+   292→            ) : (
+   293→              <RefreshCw className="w-4 h-4 mr-1.5" />
+   294→            )}
+   295→            Scrape All Sources
+   296→          </Button>
+   297→          <Button
+   298→            size="sm"
+   299→            variant="outline"
+   300→            disabled={scraping}
+   301→            onClick={() => handleScrape(true)}
+   302→          >
+   303→            <Zap className="w-4 h-4 mr-1.5" />
+   304→            Scrape AI Training Only
+   305→          </Button>
+   306→        </div>
+   307→
+   308→        {scraping && (
+   309→          <span className="text-sm text-muted-foreground flex items-center gap-1.5">
+   310→            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+   311→            Scraping in progress...
+   312→          </span>
+   313→        )}
+   314→      </div>
+   315→
+   316→      {/* Scrape Results Table */}
+   317→      <AnimatePresence>
+   318→        {scrapeResultsVisible && scrapeResults.length > 0 && (
+   319→          <motion.div
+   320→            initial={{ opacity: 0, height: 0 }}
+   321→            animate={{ opacity: 1, height: 'auto' }}
+   322→            exit={{ opacity: 0, height: 0 }}
+   323→            transition={{ duration: 0.3 }}
+   324→            className="overflow-hidden"
+   325→          >
+   326→            <Card className="border-emerald-200 dark:border-emerald-800">
+   327→              <CardContent className="p-3">
+   328→                <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400 mb-2">
+   329→                  Scraping Results
+   330→                </p>
+   331→                <div className="overflow-x-auto">
+   332→                  <table className="w-full text-sm">
+   333→                    <thead>
+   334→                      <tr className="border-b border-border">
+   335→                        <th className="text-left py-1 pr-4 font-medium text-muted-foreground text-xs">
+   336→                          Source
+   337→                        </th>
+   338→                        <th className="text-right py-1 px-4 font-medium text-muted-foreground text-xs">
+   339→                          Jobs Found
+   340→                        </th>
+   341→                        <th className="text-right py-1 pl-4 font-medium text-muted-foreground text-xs">
+   342→                          New Jobs
+   343→                        </th>
+   344→                      </tr>
+   345→                    </thead>
+   346→                    <tbody>
+   347→                      {scrapeResults.map((r, i) => (
+   348→                        <tr key={i} className="border-b border-border/50 last:border-0">
+   349→                          <td className="py-1.5 pr-4 text-sm">{r.source}</td>
+   350→                          <td className="py-1.5 px-4 text-sm text-right tabular-nums">
+   351→                            {r.jobsFound}
+   352→                          </td>
+   353→                          <td className="py-1.5 pl-4 text-sm text-right tabular-nums text-emerald-600 dark:text-emerald-400 font-medium">
+   354→                            +{r.jobsNew}
+   355→                          </td>
+   356→                        </tr>
+   357→                      ))}
+   358→                    </tbody>
+   359→                  </table>
+   360→                </div>
+   361→              </CardContent>
+   362→            </Card>
+   363→          </motion.div>
+   364→        )}
+   365→      </AnimatePresence>
+   366→
+   367→      {/* ── Filter Bar ── */}
+   368→      <div className="bg-white dark:bg-card rounded-xl border border-border/50 p-3 space-y-3">
+   369→        {/* Row 1: Search + Sort + Remote + Count */}
+   370→        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+   371→          <div className="relative flex-1 min-w-0">
+   372→            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+   373→            <Input
+   374→              placeholder="Search by title, company, or skills..."
+   375→              value={searchQuery}
+   376→              onChange={(e) => setSearchQuery(e.target.value)}
+   377→              className="pl-9 h-9"
+   378→            />
+   379→          </div>
+   380→
+   381→          <div className="flex items-center gap-3 shrink-0">
+   382→            <Select
+   383→              value={sortBy}
+   384→              onValueChange={(v) => setSortBy(v as SortKey)}
+   385→            >
+   386→              <SelectTrigger className="w-[150px] h-9 text-sm">
+   387→                <SelectValue />
+   388→              </SelectTrigger>
+   389→              <SelectContent>
+   390→                {SORT_OPTIONS.map((opt) => (
+   391→                  <SelectItem key={opt.value} value={opt.value}>
+   392→                    {opt.label}
+   393→                  </SelectItem>
+   394→                ))}
+   395→              </SelectContent>
+   396→            </Select>
+   397→
+   398→            <div className="flex items-center gap-2">
+   399→              <Switch
+   400→                id="remote-toggle"
+   401→                checked={remoteOnly}
+   402→                onCheckedChange={setRemoteOnly}
+   403→              />
+   404→              <label
+   405→                htmlFor="remote-toggle"
+   406→                className="text-sm text-muted-foreground cursor-pointer select-none"
+   407→              >
+   408→                Remote
+   409→              </label>
+   410→            </div>
+   411→          </div>
+   412→        </div>
+   413→
+   414→        {/* Row 2: Source type filter pills */}
+   415→        <div className="flex flex-wrap gap-1.5">
+   416→          {SOURCE_FILTER_OPTIONS.map((opt) => {
+   417→            const isActive = sourceFilter === opt.value;
+   418→            return (
+   419→              <button
+   420→                key={opt.value}
+   421→                onClick={() =>
+   422→                  setSourceFilter(isActive ? 'all' : opt.value)
+   423→                }
+   424→                className={`
+   425→                  px-3 py-1 rounded-full text-xs font-medium transition-colors border
+   426→                  ${
+   427→                    isActive
+   428→                      ? 'bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/40 dark:text-emerald-400 dark:border-emerald-700'
+   429→                      : 'bg-transparent text-muted-foreground border-border hover:bg-muted'
+   430→                  }
+   431→                `}
+   432→              >
+   433→                {opt.label}
+   434→              </button>
+   435→            );
+   436→          })}
+   437→        </div>
+   438→
+   439→        {/* Results count */}
+   440→        <div className="text-xs text-muted-foreground">
+   441→          Showing {filteredJobs.length} of {jobs.length} jobs
+   442→        </div>
+   443→      </div>
+   444→
+   445→      {/* ── Job Cards List ── */}
+   446→      {loading ? (
+   447→        <div className="space-y-3">
+   448→          {Array.from({ length: 5 }).map((_, i) => (
+   449→            <Card key={i}>
+   450→              <CardContent className="p-4 space-y-3">
+   451→                <div className="flex items-start justify-between gap-4">
+   452→                  <div className="flex-1 space-y-2">
+   453→                    <Skeleton className="h-3.5 w-24" />
+   454→                    <Skeleton className="h-5 w-64" />
+   455→                    <Skeleton className="h-4 w-40" />
+   456→                  </div>
+   457→                  <Skeleton className="h-10 w-10 rounded-full" />
+   458→                </div>
+   459→                <div className="flex gap-2">
+   460→                  <Skeleton className="h-6 w-16 rounded-full" />
+   461→                  <Skeleton className="h-6 w-20 rounded-full" />
+   462→                  <Skeleton className="h-6 w-14 rounded-full" />
+   463→                </div>
+   464→                <Skeleton className="h-8 w-full max-w-xs" />
+   465→              </CardContent>
+   466→            </Card>
+   467→          ))}
+   468→        </div>
+   469→      ) : error ? (
+   470→        <Card>
+   471→          <CardContent className="p-8 text-center">
+   472→            <p className="text-muted-foreground text-sm">{error}</p>
+   473→            <Button
+   474→              variant="outline"
+   475→              size="sm"
+   476→              className="mt-3"
+   477→              onClick={fetchJobs}
+   478→            >
+   479→              Try Again
+   480→            </Button>
+   481→          </CardContent>
+   482→        </Card>
+   483→      ) : filteredJobs.length === 0 ? (
+   484→        <Card>
+   485→          <CardContent className="p-8 text-center">
+   486→            <Search className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
+   487→            <p className="text-muted-foreground text-sm font-medium">
+   488→              No jobs found
+   489→            </p>
+   490→            <p className="text-muted-foreground text-xs mt-1">
+   491→              {jobs.length === 0
+   492→                ? 'No jobs available yet. Try scraping to discover jobs.'
+   493→                : 'Try adjusting your filters.'}
+   494→            </p>
+   495→          </CardContent>
+   496→        </Card>
+   497→      ) : (
+   498→        <div className="max-h-[calc(100vh-300px)] overflow-y-auto space-y-3 pr-1 custom-scrollbar">
+   499→          <AnimatePresence mode="popLayout">
+   500→            {filteredJobs.map((job) => (
+   501→              <JobCard
+   502→                key={job.id}
+   503→                job={job}
+   504→                onClick={() => openJobDetail(job)}
+   505→              />
+   506→            ))}
+   507→          </AnimatePresence>
+   508→        </div>
+   509→      )}
+   510→
+   511→      {/* ── Job Detail Dialog ── */}
+   512→      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+   513→        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+   514→          {selectedJob && (
+   515→            <>
+   516→              <DialogHeader>
+   517→                <div className="flex items-center gap-2 mb-1">
+   518→                  <Badge
+   519→                    variant="outline"
+   520→                    className={`text-[10px] ${sourceTypeBadgeClass[selectedJob.sourceType] ?? ''}`}
+   521→                  >
+   522→                    {sourceTypeLabel[selectedJob.sourceType] ?? selectedJob.sourceType}
+   523→                  </Badge>
+   524→                  {selectedJob.remote && (
+   525→                    <Badge variant="outline" className="text-[10px] bg-teal-50 text-teal-600 border-teal-200 dark:bg-teal-900/30 dark:text-teal-400 dark:border-teal-800">
+   526→                      Remote
+   527→                    </Badge>
+   528→                  )}
+   529→                </div>
+   530→                <DialogTitle className="text-lg">{selectedJob.title}</DialogTitle>
+   531→                <DialogDescription className="flex items-center gap-3 text-sm">
+   532→                  <span className="font-medium text-foreground">
+   533→                    {selectedJob.company}
+   534→                  </span>
+   535→                  {selectedJob.location && (
+   536→                    <span className="flex items-center gap-1">
+   537→                      <MapPin className="w-3.5 h-3.5" />
+   538→                      {selectedJob.location}
+   539→                    </span>
+   540→                  )}
+   541→                </DialogDescription>
+   542→              </DialogHeader>
+   543→
+   544→              <div className="space-y-4 mt-2">
+   545→                {/* Meta row */}
+   546→                <div className="flex flex-wrap items-center gap-3 text-sm">
+   547→                  {selectedJob.matchScore != null && (
+   548→                    <div
+   549→                      className={`inline-flex items-center justify-center w-10 h-10 rounded-full text-xs font-bold ring-2 ${matchScoreColor(selectedJob.matchScore)}`}
+   550→                    >
+   551→                      {selectedJob.matchScore}
+   552→                    </div>
+   553→                  )}
+   554→                  {formatSalary(selectedJob) && (
+   555→                    <span className="flex items-center gap-1 text-muted-foreground">
+   556→                      <DollarSign className="w-3.5 h-3.5" />
+   557→                      {formatSalary(selectedJob)}
+   558→                    </span>
+   559→                  )}
+   560→                  {selectedJob.postedAt && (
+   561→                    <span className="flex items-center gap-1 text-muted-foreground">
+   562→                      <Clock className="w-3.5 h-3.5" />
+   563→                      {relativeDate(selectedJob.postedAt)}
+   564→                    </span>
+   565→                  )}
+   566→                  {selectedJob.jobType && (
+   567→                    <span className="flex items-center gap-1 text-muted-foreground">
+   568→                      <Briefcase className="w-3.5 h-3.5" />
+   569→                      {selectedJob.jobType.replace('_', ' ')}
+   570→                    </span>
+   571→                  )}
+   572→                </div>
+   573→
+   574→                {/* Skills */}
+   575→                {selectedJob.skills.length > 0 && (
+   576→                  <div>
+   577→                    <h4 className="text-sm font-semibold mb-2">Skills</h4>
+   578→                    <div className="flex flex-wrap gap-1.5">
+   579→                      {selectedJob.skills.map((skill) => (
+   580→                        <Badge key={skill} variant="secondary" className="text-xs">
+   581→                          {skill}
+   582→                        </Badge>
+   583→                      ))}
+   584→                    </div>
+   585→                  </div>
+   586→                )}
+   587→
+   588→                {/* Description */}
+   589→                <div>
+   590→                  <h4 className="text-sm font-semibold mb-2">Description</h4>
+   591→                  <div className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
+   592→                    {selectedJob.description || 'No description available.'}
+   593→                  </div>
+   594→                </div>
+   595→
+   596→                {/* Requirements */}
+   597→                {selectedJob.requirements && (
+   598→                  <div>
+   599→                    <h4 className="text-sm font-semibold mb-2">Requirements</h4>
+   600→                    <div className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
+   601→                      {selectedJob.requirements}
+   602→                    </div>
+   603→                  </div>
+   604→                )}
+   605→
+   606→                {/* Actions */}
+   607→                <div className="flex items-center gap-3 pt-2 border-t">
+   608→                  <Button size="sm" variant="outline" asChild>
+   609→                    <a
+   610→                      href={selectedJob.sourceUrl}
+   611→                      target="_blank"
+   612→                      rel="noopener noreferrer"
+   613→                    >
+   614→                      <ExternalLink className="w-4 h-4 mr-1.5" />
+   615→                      View Original
+   616→                    </a>
+   617→                  </Button>
+   618→                  {(selectedJob.matchScore ?? 0) > 75 && (
+   619→                    <Button size="sm">
+   620→                      <FileText className="w-4 h-4 mr-1.5" />
+   621→                      Generate Resume
+   622→                    </Button>
+   623→                  )}
+   624→                  {selectedJob.isApplied && (
+   625→                    <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 gap-1">
+   626→                      <CheckCircle className="w-3.5 h-3.5" />
+   627→                      Applied
+   628→                    </Badge>
+   629→                  )}
+   630→                </div>
+   631→              </div>
+   632→            </>
+   633→          )}
+   634→        </DialogContent>
+   635→      </Dialog>
+   636→    </div>
+   637→  );
+   638→}
+   639→
+   640→// --- Job Card Sub-component ---
+   641→
+   642→interface JobCardProps {
+   643→  job: Job;
+   644→  onClick: () => void;
+   645→}
+   646→
+   647→function JobCard({ job, onClick }: JobCardProps) {
+   648→  const salary = formatSalary(job);
+   649→  const posted = relativeDate(job.postedAt);
+   650→  const score = job.matchScore ?? 0;
+   651→  const visibleSkills = job.skills.slice(0, 5);
+   652→  const extraCount = job.skills.length - 5;
+   653→
+   654→  return (
+   655→    <motion.div
+   656→      layout
+   657→      initial={{ opacity: 0, y: 12 }}
+   658→      animate={{ opacity: 1, y: 0 }}
+   659→      exit={{ opacity: 0, y: -12 }}
+   660→      transition={{ duration: 0.25, ease: 'easeOut' }}
+   661→    >
+   662→      <Card
+   663→        className="hover:shadow-md hover:border-border transition-all cursor-pointer group"
+   664→        onClick={onClick}
+   665→      >
+   666→        <CardContent className="p-4">
+   667→          {/* Top row: Company + Source badge + Match score */}
+   668→          <div className="flex items-start justify-between gap-3 mb-2">
+   669→            <div className="min-w-0 flex-1">
+   670→              <div className="flex items-center gap-2 mb-1">
+   671→                <span className="text-xs text-muted-foreground font-medium">
+   672→                  {job.company}
+   673→                </span>
+   674→                <Badge
+   675→                  variant="outline"
+   676→                  className={`text-[10px] ${sourceTypeBadgeClass[job.sourceType] ?? ''}`}
+   677→                >
+   678→                  {sourceTypeLabel[job.sourceType] ?? job.sourceType}
+   679→                </Badge>
+   680→              </div>
+   681→              <h3 className="font-semibold text-sm leading-tight group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors line-clamp-2">
+   682→                {job.title}
+   683→              </h3>
+   684→            </div>
+   685→
+   686→            {/* Match score circle */}
+   687→            <Tooltip>
+   688→              <TooltipTrigger asChild>
+   689→                <div
+   690→                  className={`flex items-center justify-center w-11 h-11 rounded-full text-xs font-bold ring-2 shrink-0 transition-transform group-hover:scale-105 ${matchScoreColor(score)}`}
+   691→                >
+   692→                  {score > 0 ? score : '—'}
+   693→                </div>
+   694→              </TooltipTrigger>
+   695→              <TooltipContent>
+   696→                <p>Match Score: {score}/100</p>
+   697→              </TooltipContent>
+   698→            </Tooltip>
+   699→          </div>
+   700→
+   701→          {/* Salary + Location + Date */}
+   702→          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground mb-2.5">
+   703→            {salary && (
+   704→              <span className="flex items-center gap-1">
+   705→                <DollarSign className="w-3 h-3" />
+   706→                {salary}
+   707→              </span>
+   708→            )}
+   709→            {job.location && (
+   710→              <span className="flex items-center gap-1">
+   711→                <MapPin className="w-3 h-3" />
+   712→                {job.location}
+   713→              </span>
+   714→            )}
+   715→            {job.remote && (
+   716→              <Badge
+   717→                variant="outline"
+   718→                className="text-[10px] bg-teal-50 text-teal-600 border-teal-200 dark:bg-teal-900/30 dark:text-teal-400 dark:border-teal-800 h-5 px-1.5"
+   719→              >
+   720→                Remote
+   721→              </Badge>
+   722→            )}
+   723→            {posted && (
+   724→              <span className="flex items-center gap-1">
+   725→                <Clock className="w-3 h-3" />
+   726→                {posted}
+   727→              </span>
+   728→            )}
+   729→          </div>
+   730→
+   731→          {/* Skills */}
+   732→          {visibleSkills.length > 0 && (
+   733→            <div className="flex flex-wrap gap-1 mb-3">
+   734→              {visibleSkills.map((skill) => (
+   735→                <Badge
+   736→                  key={skill}
+   737→                  variant="secondary"
+   738→                  className="text-[11px] font-normal px-2 py-0 h-5"
+   739→                >
+   740→                  {skill}
+   741→                </Badge>
+   742→              ))}
+   743→              {extraCount > 0 && (
+   744→                <Badge variant="secondary" className="text-[11px] font-normal px-2 py-0 h-5">
+   745→                  +{extraCount} more
+   746→                </Badge>
+   747→              )}
+   748→            </div>
+   749→          )}
+   750→
+   751→          {/* Bottom row: Actions */}
+   752→          <div className="flex items-center gap-2 pt-2 border-t border-border/50">
+   753→            <Button
+   754→              size="sm"
+   755→              variant="ghost"
+   756→              className="h-7 text-xs px-3"
+   757→              onClick={(e) => {
+   758→                e.stopPropagation();
+   759→                onClick();
+   760→              }}
+   761→            >
+   762→              <ExternalLink className="w-3.5 h-3.5 mr-1" />
+   763→              View Details
+   764→            </Button>
+   765→
+   766→            {score > 75 && (
+   767→              <Button
+   768→                size="sm"
+   769→                variant="outline"
+   770→                className="h-7 text-xs px-3 text-emerald-600 border-emerald-200 hover:bg-emerald-50 dark:text-emerald-400 dark:border-emerald-800 dark:hover:bg-emerald-900/20"
+   771→                onClick={(e) => {
+   772→                  e.stopPropagation();
+   773→                }}
+   774→              >
+   775→                <FileText className="w-3.5 h-3.5 mr-1" />
+   776→                Generate Resume
+   777→              </Button>
+   778→            )}
+   779→
+   780→            {job.isApplied && (
+   781→              <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 gap-1 text-[11px] ml-auto">
+   782→                <CheckCircle className="w-3 h-3" />
+   783→                Applied
+   784→              </Badge>
+   785→            )}
+   786→
+   787→            <Star
+   788→              className="w-4 h-4 text-muted-foreground ml-auto hover:text-amber-500 transition-colors cursor-pointer"
+   789→              onClick={(e) => e.stopPropagation()}
+   790→            />
+   791→          </div>
+   792→        </CardContent>
+   793→      </Card>
+   794→    </motion.div>
+   795→  );
+   796→}

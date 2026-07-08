@@ -1,0 +1,157 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model JobSource {
+  id          String @id @default(cuid())
+  name        String
+  type        String // "ai_training", "ats", "job_board", "remote", "startup", "research_lab", "big_tech"
+  website     String
+  logoUrl     String?
+  isActive    Boolean @default(true)
+  lastScraped DateTime?
+  jobsCount   Int     @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  jobs        Job[]
+}
+
+model Company {
+  id          String @id @default(cuid())
+  name        String
+  website     String?
+  logoUrl     String?
+  industry    String?
+  size        String?
+  description String?
+  location    String?
+  jobs        Job[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Job {
+  id              String     @id @default(cuid())
+  title           String
+  company         String
+  companyId       String?
+  source          String
+  sourceId        String?
+  sourceType      String
+  sourceUrl       String
+  sourceModel     JobSource? @relation(fields: [sourceId], references: [id])
+  location        String?
+  remote          Boolean    @default(false)
+  salaryMin       Float?
+  salaryMax       Float?
+  salaryCurrency  String     @default("USD")
+  salaryType      String?    // "hourly", "monthly", "yearly"
+  description     String
+  requirements    String?
+  skills          String     // JSON array stored as string
+  experienceLevel String?    // "entry", "mid", "senior", "lead", "executive"
+  jobType         String?    // "full_time", "part_time", "contract", "freelance"
+  postedAt        DateTime?
+  expiresAt       DateTime?
+  matchScore      Float?
+  isActive        Boolean    @default(true)
+  isApplied       Boolean    @default(false)
+  companyModel    Company?   @relation(fields: [companyId], references: [id])
+  applications    Application[]
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+}
+
+model Resume {
+  id          String          @id @default(cuid())
+  fileName    String
+  fileData    String          // Base64 encoded
+  fileType    String          // "pdf", "docx"
+  isPrimary   Boolean         @default(false)
+  parsedData  String          // JSON string of parsed resume
+  skills      String          // JSON array
+  experience  String          // JSON array
+  education   String          // JSON array
+  projects    String          // JSON array
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  versions    ResumeVersion[]
+  applications Application[]
+}
+
+model ResumeVersion {
+  id          String   @id @default(cuid())
+  resumeId    String
+  jobId       String?
+  fileName    String
+  fileData    String?
+  fileType    String   @default("pdf")
+  version     Int
+  changes     String?
+  atsScore    Float?
+  resume      Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Application {
+  id              String   @id @default(cuid())
+  jobId           String
+  resumeId        String
+  resumeVersionId String?
+  status          String   @default("draft") // "draft", "submitted", "reviewing", "interview", "assessment", "offer", "rejected", "ghosted"
+  coverLetter     String?
+  notes           String?
+  appliedAt       DateTime?
+  lastFollowUp    DateTime?
+  nextFollowUp    DateTime?
+  salaryOffered   Float?
+  recruiterName   String?
+  recruiterEmail  String?
+  feedback        String?
+  job             Job      @relation(fields: [jobId], references: [id])
+  resume          Resume   @relation(fields: [resumeId], references: [id])
+  interviews      Interview[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Interview {
+  id           String   @id @default(cuid())
+  applicationId String
+  round        Int
+  type         String?  // "phone", "video", "onsite", "technical", "behavioral", "panel"
+  date         DateTime?
+  duration     Int?     // minutes
+  interviewer  String?
+  status       String   @default("scheduled") // "scheduled", "completed", "cancelled", "rescheduled"
+  notes        String?
+  feedback     String?
+  application  Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model Skill {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  category  String?  // "language", "framework", "tool", "domain", "soft"
+  createdAt DateTime @default(now())
+}
+
+model ScrapingLog {
+  id        String   @id @default(cuid())
+  sourceId  String?
+  source    String
+  status    String   // "success", "partial", "failed"
+  jobsFound Int
+  jobsNew   Int
+  errors    String?
+  duration  Int?     // ms
+  createdAt DateTime @default(now())
+}
