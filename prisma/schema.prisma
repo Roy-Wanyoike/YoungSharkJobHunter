@@ -7,22 +7,40 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String
+  role          String   @default("applicant") // "viewer", "applicant", "admin"
+  preferences   String?  // JSON
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  resumes       Resume[]
+  applications  Application[]
+  notifications Notification[]
+}
+
 model JobSource {
-  id          String @id @default(cuid())
-  name        String
-  type        String // "ai_training", "ats", "job_board", "remote", "startup", "research_lab", "big_tech"
-  website     String
-  logoUrl     String?
-  isActive    Boolean @default(true)
-  lastScraped DateTime?
-  jobsCount   Int     @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  jobs        Job[]
+  id            String   @id @default(cuid())
+  name          String
+  type          String   // "ai_training", "ats", "job_board", "remote", "startup", "research_lab", "big_tech", "freelance", "government", "university"
+  website       String
+  logoUrl       String?
+  isActive      Boolean  @default(true)
+  lastScraped   DateTime?
+  jobsCount     Int      @default(0)
+  connectorName String?
+  healthStatus  String   @default("healthy") // "healthy", "degraded", "down"
+  avgResponseMs Int?
+  errorRate     Float    @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  jobs          Job[]
+  scrapingLogs  ScrapingLog[]
 }
 
 model Company {
-  id          String @id @default(cuid())
+  id          String   @id @default(cuid())
   name        String
   website     String?
   logoUrl     String?
@@ -30,9 +48,9 @@ model Company {
   size        String?
   description String?
   location    String?
-  jobs        Job[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  jobs        Job[]
 }
 
 model Job {
@@ -53,7 +71,7 @@ model Job {
   salaryType      String?    // "hourly", "monthly", "yearly"
   description     String
   requirements    String?
-  skills          String     // JSON array stored as string
+  skills          String     // JSON array
   experienceLevel String?    // "entry", "mid", "senior", "lead", "executive"
   jobType         String?    // "full_time", "part_time", "contract", "freelance"
   postedAt        DateTime?
@@ -61,6 +79,7 @@ model Job {
   matchScore      Float?
   isActive        Boolean    @default(true)
   isApplied       Boolean    @default(false)
+  isSaved         Boolean    @default(false)
   companyModel    Company?   @relation(fields: [companyId], references: [id])
   applications    Application[]
   createdAt       DateTime   @default(now())
@@ -69,42 +88,49 @@ model Job {
 
 model Resume {
   id          String          @id @default(cuid())
+  userId      String
   fileName    String
-  fileData    String          // Base64 encoded
-  fileType    String          // "pdf", "docx"
+  fileData    String?
+  fileType    String          @default("pdf")
   isPrimary   Boolean         @default(false)
-  parsedData  String          // JSON string of parsed resume
+  parsedData  String          // JSON string
   skills      String          // JSON array
   experience  String          // JSON array
   education   String          // JSON array
   projects    String          // JSON array
+  certifications String?      // JSON array
+  languages   String?         // JSON array
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   versions    ResumeVersion[]
   applications Application[]
 }
 
 model ResumeVersion {
-  id          String   @id @default(cuid())
-  resumeId    String
-  jobId       String?
-  fileName    String
-  fileData    String?
-  fileType    String   @default("pdf")
-  version     Int
-  changes     String?
-  atsScore    Float?
-  resume      Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String   @id @default(cuid())
+  resumeId      String
+  jobId         String?
+  fileName      String
+  fileData      String?
+  fileType      String   @default("pdf")
+  version       Int
+  changes       String?
+  atsScore      Float?
+  matchedSkills String?  // JSON array
+  missingKeywords String? // JSON array
+  resume        Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 model Application {
   id              String   @id @default(cuid())
+  userId          String
   jobId           String
   resumeId        String
   resumeVersionId String?
-  status          String   @default("draft") // "draft", "submitted", "reviewing", "interview", "assessment", "offer", "rejected", "ghosted"
+  status          String   @default("draft")
   coverLetter     String?
   notes           String?
   appliedAt       DateTime?
@@ -113,7 +139,10 @@ model Application {
   salaryOffered   Float?
   recruiterName   String?
   recruiterEmail  String?
+  recruiterCompany String?
   feedback        String?
+  atsScore        Float?
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   job             Job      @relation(fields: [jobId], references: [id])
   resume          Resume   @relation(fields: [resumeId], references: [id])
   interviews      Interview[]
@@ -122,36 +151,67 @@ model Application {
 }
 
 model Interview {
-  id           String   @id @default(cuid())
+  id            String      @id @default(cuid())
   applicationId String
-  round        Int
-  type         String?  // "phone", "video", "onsite", "technical", "behavioral", "panel"
-  date         DateTime?
-  duration     Int?     // minutes
-  interviewer  String?
-  status       String   @default("scheduled") // "scheduled", "completed", "cancelled", "rescheduled"
-  notes        String?
-  feedback     String?
-  application  Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  round         Int
+  type          String?
+  date          DateTime?
+  duration      Int?
+  interviewer   String?
+  status        String      @default("scheduled")
+  notes         String?
+  feedback      String?
+  prepNotes     String?
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 }
 
 model Skill {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  category  String?  // "language", "framework", "tool", "domain", "soft"
-  createdAt DateTime @default(now())
+  id            String   @id @default(cuid())
+  name          String   @unique
+  category      String?  // "language", "framework", "tool", "domain", "soft"
+  demandScore   Float    @default(50)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 model ScrapingLog {
+  id          String   @id @default(cuid())
+  sourceId    String?
+  source      String
+  status      String
+  jobsFound   Int
+  jobsNew     Int
+  errors      String?
+  duration    Int?
+  createdAt   DateTime @default(now())
+  sourceModel JobSource? @relation(fields: [sourceId], references: [id])
+}
+
+model Notification {
   id        String   @id @default(cuid())
-  sourceId  String?
-  source    String
-  status    String   // "success", "partial", "failed"
-  jobsFound Int
-  jobsNew   Int
-  errors    String?
-  duration  Int?     // ms
+  userId    String
+  type      String   // "info", "success", "warning", "error"
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  link      String?
   createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SalaryData {
+  id            String   @id @default(cuid())
+  role          String
+  level         String?
+  location      String?
+  source        String?
+  salaryMin     Float
+  salaryMax     Float
+  salaryType    String   @default("yearly")
+  currency      String   @default("USD")
+  sampleSize    Int      @default(1)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }

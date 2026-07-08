@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Sparkles,
   Download,
@@ -11,11 +11,9 @@ import {
   Lightbulb,
   Target,
   TrendingUp,
-  AlertTriangle,
   Search,
   Loader2,
 } from 'lucide-react';
-import type { Job } from '@/lib/types';
 import {
   Card,
   CardContent,
@@ -25,7 +23,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Progress } from '@/components/ui/progress';
 import {
   Dialog,
   DialogContent,
@@ -36,53 +33,85 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
+import { toast } from 'sonner';
 
-/* -------------------------------------------------------------------------- */
-/*  Types                                                                     */
-/* -------------------------------------------------------------------------- */
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface JobSearchItem {
+  id: string;
+  title: string;
+  company: string;
+  matchScore?: number | null;
+  skills?: string[];
+  requirements?: string | null;
+}
 
 interface GeneratedResult {
   jobTitle: string;
   company: string;
   atsScore: number;
-  matchedSkills: string[];
+  tailoredSkills: string[];
   missingKeywords: string[];
   recommendations: string[];
   summary: string;
-  experienceRewrite: Array<{ title: string; company: string; bullets: string[]; tech: string[] }>;
+  experienceRewrite: Array<{
+    title: string;
+    company: string;
+    bullets: string[];
+    tech: string[];
+  }>;
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Inline toast helper                                                       */
-/* -------------------------------------------------------------------------- */
+// ─── ATS Score Circle (pure CSS / SVG) ─────────────────────────────────────────
 
-function useToast() {
-  const [toast, setToast] = useState<string | null>(null);
-  const show = (msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 3000);
-  };
-  return { toast, show };
+function AtsScoreCircle({ score }: { score: number }) {
+  const circumference = 2 * Math.PI * 36;
+  const dashOffset = circumference - (score / 100) * circumference;
+  const color =
+    score >= 80 ? '#22c55e' : score >= 60 ? '#eab308' : '#ef4444';
+
+  return (
+    <div className="relative flex items-center justify-center" style={{ width: 96, height: 96 }}>
+      <svg width="96" height="96" viewBox="0 0 96 96" className="-rotate-90">
+        <circle cx="48" cy="48" r="36" fill="none" stroke="currentColor" strokeWidth="5" className="text-muted/30" />
+        <circle
+          cx="48"
+          cy="48"
+          r="36"
+          fill="none"
+          stroke={color}
+          strokeWidth="5"
+          strokeDasharray={circumference}
+          strokeDashoffset={dashOffset}
+          strokeLinecap="round"
+          className="transition-all duration-700"
+        />
+      </svg>
+      <div className="absolute text-center">
+        <span className="text-2xl font-bold" style={{ color }}>{score}</span>
+        <span className="block text-[10px] text-muted-foreground">/ 100</span>
+      </div>
+    </div>
+  );
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Component                                                                 */
-/* -------------------------------------------------------------------------- */
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function ResumeGeneratorPanel() {
   /* ----- state ----- */
   const [search, setSearch] = useState('');
-  const [jobs, setJobs] = useState<Job[]>([]);
+  const [jobs, setJobs] = useState<JobSearchItem[]>([]);
   const [searching, setSearching] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
-  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [selectedJob, setSelectedJob] = useState<JobSearchItem | null>(null);
 
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<GeneratedResult | null>(null);
 
   const [coverLetterOpen, setCoverLetterOpen] = useState(false);
-  const { toast, show: showToast } = useToast();
+  const [coverLetter, setCoverLetter] = useState('');
+  const [generatingCover, setGeneratingCover] = useState(false);
 
   /* ----- debounced job search ----- */
   useEffect(() => {
@@ -94,10 +123,13 @@ export default function ResumeGeneratorPanel() {
     const timer = setTimeout(async () => {
       setSearching(true);
       try {
-        const res = await fetch(`/api/jobs?search=${encodeURIComponent(search.trim())}`);
+        const res = await fetch(`/api/jobs?search=${encodeURIComponent(search.trim())}&limit=10`);
         if (res.ok) {
           const data = await res.json();
-          setJobs(Array.isArray(data) ? data : data.jobs ?? []);
+          const items: JobSearchItem[] = Array.isArray(data)
+            ? data
+            : (data.jobs ?? []);
+          setJobs(items);
           setDropdownOpen(true);
         }
       } catch {
@@ -121,13 +153,73 @@ export default function ResumeGeneratorPanel() {
         body: JSON.stringify({ jobId: selectedJob.id }),
       });
       if (!res.ok) throw new Error('Failed to generate');
-      const data = await res.json();
+      const data: GeneratedResult = await res.json();
       setResult(data);
+      toast.success('Resume generated successfully!');
     } catch {
-      showToast('Generation failed. Please try again.');
+      toast.error('Generation failed. Please try again.');
     } finally {
       setGenerating(false);
     }
+  };
+
+  /* ----- generate cover letter via chat API ----- */
+  const handleGenerateCoverLetter = async () => {
+    if (!selectedJob || !result) return;
+    setGeneratingCover(true);
+    setCoverLetter('');
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: `Write a professional cover letter for the ${selectedJob.title} position at ${selectedJob.company}. Use the following ATS-optimized summary and experience:\n\nSummary: ${result.summary}\n\nExperience: ${result.experienceRewrite.map((e) => `${e.title} at ${e.company}: ${e.bullets.join(' ')}`).join('\n')}`,
+          history: [],
+        }),
+      });
+      if (!res.ok) throw new Error('Failed to generate cover letter');
+      const data = await res.json();
+      setCoverLetter(data.response ?? '');
+      toast.success('Cover letter generated!');
+    } catch {
+      toast.error('Failed to generate cover letter.');
+    } finally {
+      setGeneratingCover(false);
+    }
+  };
+
+  /* ----- download as text blob ----- */
+  const handleDownload = () => {
+    if (!result) return;
+    const lines: string[] = [];
+    lines.push(`RESUME - ${result.jobTitle} at ${result.company}`);
+    lines.push(`ATS Score: ${result.atsScore}/100`);
+    lines.push('');
+    lines.push('PROFESSIONAL SUMMARY');
+    lines.push(result.summary);
+    lines.push('');
+    lines.push('EXPERIENCE');
+    for (const exp of result.experienceRewrite) {
+      lines.push(`${exp.title} — ${exp.company}`);
+      for (const bullet of exp.bullets) {
+        lines.push(`  • ${bullet}`);
+      }
+      if (exp.tech.length > 0) {
+        lines.push(`  Technologies: ${exp.tech.join(', ')}`);
+      }
+      lines.push('');
+    }
+    lines.push('KEY SKILLS');
+    lines.push(result.tailoredSkills.join(', '));
+
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `resume_${result.company.toLowerCase().replace(/\s+/g, '_')}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Resume downloaded!');
   };
 
   /* ----- derived ----- */
@@ -139,13 +231,6 @@ export default function ResumeGeneratorPanel() {
 
   return (
     <div className="space-y-6">
-      {/* Toast */}
-      {toast && (
-        <div className="fixed bottom-6 right-6 z-50 rounded-lg bg-green-600 px-4 py-2 text-sm text-white shadow-lg">
-          {toast}
-        </div>
-      )}
-
       {/* ---- 1. Job Search ---- */}
       <Card>
         <CardHeader>
@@ -165,10 +250,12 @@ export default function ResumeGeneratorPanel() {
               onFocus={() => jobs.length > 0 && setDropdownOpen(true)}
               onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
             />
-            {searching && <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />}
+            {searching && (
+              <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+            )}
           </div>
 
-          {/* dropdown */}
+          {/* Dropdown */}
           {dropdownOpen && jobs.length > 0 && (
             <div className="rounded-md border bg-popover shadow-md">
               <ScrollArea className="max-h-60">
@@ -212,13 +299,15 @@ export default function ResumeGeneratorPanel() {
           <CardContent className="space-y-3">
             {requirementsLines.length > 0 && (
               <div className="space-y-1">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Requirements</p>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Requirements
+                </p>
                 {requirementsLines.map((line, i) => (
                   <p key={i} className="text-sm">{line}</p>
                 ))}
               </div>
             )}
-            {selectedJob.skills.length > 0 && (
+            {selectedJob.skills && selectedJob.skills.length > 0 && (
               <div className="flex flex-wrap gap-1.5 pt-1">
                 {selectedJob.skills.map((s) => (
                   <Badge key={s} variant="outline">{s}</Badge>
@@ -243,8 +332,32 @@ export default function ResumeGeneratorPanel() {
       {/* ---- 3. Loading Skeleton ---- */}
       {generating && (
         <div className="grid gap-6 md:grid-cols-2">
-          <Card><CardContent className="space-y-3 pt-6"><Skeleton className="h-4 w-3/4" /><Skeleton className="h-4 w-1/2" /><Skeleton className="h-20 w-full" /><Skeleton className="h-20 w-full" /></CardContent></Card>
-          <Card><CardContent className="space-y-3 pt-6"><Skeleton className="h-4 w-2/3" /><Skeleton className="h-20 w-full" /><Skeleton className="h-20 w-full" /></CardContent></Card>
+          <Card>
+            <CardContent className="space-y-4 pt-6">
+              <Skeleton className="h-5 w-3/4" />
+              <div className="flex justify-center py-4">
+                <Skeleton className="h-24 w-24 rounded-full" />
+              </div>
+              <Skeleton className="h-4 w-1/2" />
+              <div className="space-y-2">
+                <Skeleton className="h-6 w-20 rounded-full" />
+                <Skeleton className="h-6 w-24 rounded-full" />
+                <Skeleton className="h-6 w-16 rounded-full" />
+              </div>
+              <Skeleton className="h-20 w-full" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="space-y-4 pt-6">
+              <Skeleton className="h-5 w-2/3" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-5/6" />
+              <Separator />
+              <Skeleton className="h-4 w-1/3" />
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-16 w-full" />
+            </CardContent>
+          </Card>
         </div>
       )}
 
@@ -260,26 +373,24 @@ export default function ResumeGeneratorPanel() {
                   ATS Analysis
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Score */}
-                <div className="space-y-1">
-                  <div className="flex items-end gap-2">
-                    <span className="text-4xl font-bold">{result.atsScore}</span>
-                    <span className="mb-1 text-sm text-muted-foreground">/ 100</span>
-                  </div>
-                  <Progress value={result.atsScore} className="h-2" />
+              <CardContent className="space-y-5">
+                {/* Score circle */}
+                <div className="flex justify-center">
+                  <AtsScoreCircle score={result.atsScore} />
                 </div>
 
                 {/* Matched Skills */}
-                {result.matchedSkills.length > 0 && (
+                {result.tailoredSkills.length > 0 && (
                   <div className="space-y-1.5">
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                       <CheckCircle className="mr-1 inline h-3 w-3 text-green-500" />
                       Matched Skills
                     </p>
                     <div className="flex flex-wrap gap-1.5">
-                      {result.matchedSkills.map((s) => (
-                        <Badge key={s} className="bg-green-600 hover:bg-green-700 text-white">{s}</Badge>
+                      {result.tailoredSkills.map((s) => (
+                        <Badge key={s} className="bg-green-600 hover:bg-green-700 text-white">
+                          {s}
+                        </Badge>
                       ))}
                     </div>
                   </div>
@@ -307,7 +418,7 @@ export default function ResumeGeneratorPanel() {
                       <Lightbulb className="mr-1 inline h-3 w-3 text-yellow-500" />
                       Recommendations
                     </p>
-                    <ol className="list-decimal list-inside space-y-1 text-sm">
+                    <ol className="list-decimal list-inside space-y-1.5 text-sm">
                       {result.recommendations.map((r, i) => (
                         <li key={i} className="flex items-start gap-1.5">
                           <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-yellow-500" />
@@ -331,7 +442,9 @@ export default function ResumeGeneratorPanel() {
               <CardContent className="space-y-4">
                 {/* Summary */}
                 <div className="space-y-1">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Optimized Summary</p>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Optimized Summary
+                  </p>
                   <p className="text-sm leading-relaxed">{result.summary}</p>
                 </div>
 
@@ -339,10 +452,15 @@ export default function ResumeGeneratorPanel() {
 
                 {/* Rewritten Experience */}
                 <div className="space-y-4">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Experience</p>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Experience
+                  </p>
                   {result.experienceRewrite.map((exp, i) => (
                     <div key={i} className="space-y-1">
-                      <p className="text-sm font-semibold">{exp.title} <span className="font-normal text-muted-foreground">— {exp.company}</span></p>
+                      <p className="text-sm font-semibold">
+                        {exp.title}{' '}
+                        <span className="font-normal text-muted-foreground">— {exp.company}</span>
+                      </p>
                       <ul className="list-disc list-inside space-y-0.5 text-sm text-muted-foreground">
                         {exp.bullets.map((b, j) => (
                           <li key={j}>{b}</li>
@@ -364,11 +482,11 @@ export default function ResumeGeneratorPanel() {
 
           {/* ---- 5. Bottom Actions ---- */}
           <div className="flex flex-wrap gap-3">
-            <Button variant="outline" onClick={() => showToast('Resume download started!')}>
+            <Button variant="outline" onClick={handleDownload}>
               <Download className="mr-2 h-4 w-4" />
               Download Resume
             </Button>
-            <Button variant="secondary" onClick={() => setCoverLetterOpen(true)}>
+            <Button variant="secondary" onClick={() => { setCoverLetterOpen(true); handleGenerateCoverLetter(); }}>
               <Send className="mr-2 h-4 w-4" />
               Generate Cover Letter
             </Button>
@@ -385,25 +503,45 @@ export default function ResumeGeneratorPanel() {
               Cover Letter
             </DialogTitle>
             <DialogDescription>
-              AI-generated cover letter for {selectedJob?.title ?? 'this position'} at {selectedJob?.company ?? 'the company'}.
+              AI-generated cover letter for {selectedJob?.title ?? 'this position'} at{' '}
+              {selectedJob?.company ?? 'the company'}.
             </DialogDescription>
           </DialogHeader>
           <ScrollArea className="max-h-[60vh] pr-2">
-            <div className="whitespace-pre-line text-sm leading-relaxed">
-{`Dear Hiring Manager,
-
-I am excited to apply for the ${selectedJob?.title ?? 'position'} role at ${selectedJob?.company ?? 'your company'}. With a strong background in the required technologies and a passion for building impactful solutions, I believe I would be a valuable addition to your team.
-
-Throughout my career, I have consistently delivered high-quality results by combining technical expertise with a collaborative, results-driven approach. My experience aligns closely with the requirements of this role, and I am eager to contribute to your team's success.
-
-I would welcome the opportunity to discuss how my skills and experiences can benefit ${selectedJob?.company ?? 'your organization'}. Thank you for considering my application.
-
-Best regards,
-[Your Name]`}
-            </div>
+            {generatingCover ? (
+              <div className="space-y-3 py-4">
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-5/6" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-2/3" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-4/5" />
+              </div>
+            ) : coverLetter ? (
+              <div className="whitespace-pre-line text-sm leading-relaxed py-2">
+                {coverLetter}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground py-8 text-center">
+                Click &quot;Generate Cover Letter&quot; to create one.
+              </p>
+            )}
           </ScrollArea>
         </DialogContent>
       </Dialog>
+
+      {/* Empty state when nothing selected */}
+      {!selectedJob && !generating && (
+        <Card>
+          <CardContent className="py-16 text-center">
+            <Sparkles className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-40" />
+            <p className="text-sm text-muted-foreground">
+              Search and select a job above to generate a tailored resume.
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

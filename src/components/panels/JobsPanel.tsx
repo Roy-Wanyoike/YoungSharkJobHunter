@@ -1,300 +1,731 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Search, MapPin, DollarSign, Clock, Briefcase, Star,
-  RefreshCw, ExternalLink, FileText, CheckCircle, Zap, Loader2,
+  Search,
+  MapPin,
+  DollarSign,
+  Clock,
+  Bookmark,
+  BookmarkCheck,
+  CheckCircle,
+  ExternalLink,
+  RefreshCw,
+  Loader2,
+  X,
+  Info,
+  CheckCircle2,
+  Briefcase,
+  Wifi,
+  Eye,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import type { Job, JobSourceType } from '@/lib/types';
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TooltipProvider,
+} from '@/components/ui/tooltip';
+import { toast } from 'sonner';
 
-const SOURCE_FILTER_OPTIONS = [
-  { value: 'all', label: 'All' },
-  { value: 'ai_training', label: 'AI Training' },
-  { value: 'research_lab', label: 'Research Lab' },
-  { value: 'big_tech', label: 'Big Tech' },
-  { value: 'job_board', label: 'Job Board' },
-  { value: 'remote', label: 'Remote' },
-  { value: 'ats', label: 'ATS' },
-  { value: 'startup', label: 'Startup' },
-  { value: 'freelance', label: 'Freelance' },
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface JobItem {
+  id: string;
+  title: string;
+  company: string;
+  source: string;
+  sourceType: string;
+  sourceUrl: string;
+  location: string | null;
+  remote: boolean;
+  salaryMin: number | null;
+  salaryMax: number | null;
+  salaryCurrency: string;
+  salaryType: string | null;
+  description: string;
+  requirements: string | null;
+  skills: string[];
+  experienceLevel: string | null;
+  jobType: string | null;
+  postedAt: string | null;
+  matchScore: number | null;
+  isApplied: boolean;
+  isSaved: boolean;
+  createdAt: string;
+}
+
+interface JobsResponse {
+  jobs: JobItem[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+interface ScrapeResult {
+  status: string;
+  sourcesScraped: number;
+  totalJobsFound: number;
+  totalJobsNew: number;
+  results: Array<{ source: string; status: string; jobsFound: number; jobsNew: number }>;
+}
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const SOURCE_TYPE_OPTIONS = [
+  { label: 'All Sources', value: '' },
+  { label: 'AI Training', value: 'ai_training' },
+  { label: 'Job Board', value: 'job_board' },
+  { label: 'Remote', value: 'remote' },
+  { label: 'Startup', value: 'startup' },
+  { label: 'Big Tech', value: 'big_tech' },
+  { label: 'ATS', value: 'ats' },
+  { label: 'Research', value: 'research_lab' },
 ];
 
-const sourceTypeBadgeClass: Record<string, string> = {
-  ai_training: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400',
-  research_lab: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-400',
-  big_tech: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400',
-  remote: 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-400',
-  ats: 'bg-slate-100 text-slate-600 dark:bg-slate-800/40 dark:text-slate-400',
-  startup: 'bg-pink-100 text-pink-700 dark:bg-pink-900/40 dark:text-pink-400',
-  job_board: 'bg-gray-100 text-gray-600 dark:bg-gray-800/40 dark:text-gray-400',
-  freelance: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400',
-};
+const SORT_OPTIONS = [
+  { label: 'Match Score', value: 'matchScore' },
+  { label: 'Salary', value: 'salary' },
+  { label: 'Date Posted', value: 'postedAt' },
+];
 
-function formatSalary(job: Job): string | null {
-  const { salaryMin, salaryMax, salaryType } = job;
-  if (!salaryMin && !salaryMax) return null;
-  const min = salaryMin ?? 0;
-  const max = salaryMax ?? 0;
-  const fmt = (n: number) => n >= 1000 ? `${Math.round(n / 1000)}K` : String(n);
-  const suffix = salaryType === 'hourly' ? '/hr' : salaryType === 'monthly' ? '/mo' : '/yr';
-  const prefix = '$';
-  if (min && max && min !== max) return `${prefix}${fmt(min)}-${fmt(max)}${suffix}`;
-  return `${prefix}${fmt(max || min)}${suffix}`;
-}
+// ─── Match Score SVG Ring ──────────────────────────────────────────────────────
 
-function relativeDate(dateStr?: string): string {
-  if (!dateStr) return '';
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const days = Math.floor(diff / 86400000);
-  if (days === 0) return 'Today';
-  if (days === 1) return 'Yesterday';
-  if (days < 7) return `${days} days ago`;
-  if (days < 30) return `${Math.floor(days / 7)}w ago`;
-  return `${Math.floor(days / 30)}mo ago`;
-}
-
-function matchScoreColor(score: number): string {
-  if (score > 85) return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400';
-  if (score > 70) return 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400';
-  return 'bg-gray-100 text-gray-600 dark:bg-gray-800/40 dark:text-gray-400';
-}
-
-function JobCard({ job, onClick }: { job: Job; onClick: () => void }) {
-  const salary = formatSalary(job);
-  const posted = relativeDate(job.postedAt);
-  const score = job.matchScore ?? 0;
-  const visibleSkills = job.skills.slice(0, 5);
-  const extraCount = job.skills.length - 5;
+function MatchScoreRing({ score }: { score: number | null }) {
+  const value = score ?? 0;
+  const color =
+    value >= 80 ? '#22c55e' : value >= 60 ? '#eab308' : '#ef4444';
+  const circumference = 2 * Math.PI * 18;
+  const dashOffset = circumference - (value / 100) * circumference;
 
   return (
-    <div className="transition-all duration-200 hover:shadow-md">
-      <Card className="hover:border-border transition-all cursor-pointer group" onClick={onClick}>
-        <CardContent className="p-4">
-          <div className="flex items-start justify-between gap-3 mb-2">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 mb-1 flex-wrap">
-                <span className="text-xs text-muted-foreground font-medium">{job.company}</span>
-                <Badge variant="outline" className={`text-[10px] ${sourceTypeBadgeClass[job.sourceType] ?? ''}`}>
-                  {job.sourceType === 'ai_training' ? 'AI Training' : job.sourceType === 'research_lab' ? 'Research' : job.sourceType.replace('_', ' ')}
-                </Badge>
-              </div>
-              <h3 className="font-semibold text-sm leading-tight mb-1">{job.title}</h3>
-            </div>
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${matchScoreColor(score)}`}>
-              {score}%
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 mb-3 text-xs text-muted-foreground">
-            {salary && (<span className="flex items-center gap-1"><DollarSign className="w-3 h-3" />{salary}</span>)}
-            <span className="flex items-center gap-1">
-              {job.remote ? (<><MapPin className="w-3 h-3" />Remote</>) : job.location ? (<><MapPin className="w-3 h-3" />{job.location}</>) : null}
-            </span>
-            <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{posted}</span>
-          </div>
-
-          <div className="flex flex-wrap gap-1.5">
-            {visibleSkills.map((skill) => (
-              <Badge key={skill} variant="secondary" className="text-[10px] px-1.5 py-0">{skill}</Badge>
-            ))}
-            {extraCount > 0 && <span className="text-[10px] text-muted-foreground">+{extraCount} more</span>}
-          </div>
-
-          <div className="flex items-center gap-2 mt-3 pt-2 border-t border-border/50">
-            <Button variant="outline" size="sm" className="text-xs h-7" onClick={(e) => { e.stopPropagation(); onClick(); }}>
-              View Details
-            </Button>
-            {job.isApplied && (
-              <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 text-xs">
-                <CheckCircle className="w-3 h-3 mr-0.5" /> Applied
-              </Badge>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+    <div className="relative flex items-center justify-center" style={{ width: 44, height: 44 }}>
+      <svg width="44" height="44" viewBox="0 0 44 44" className="-rotate-90">
+        <circle cx="22" cy="22" r="18" fill="none" stroke="currentColor" strokeWidth="3" className="text-muted/30" />
+        <circle
+          cx="22"
+          cy="22"
+          r="18"
+          fill="none"
+          stroke={color}
+          strokeWidth="3"
+          strokeDasharray={circumference}
+          strokeDashoffset={dashOffset}
+          strokeLinecap="round"
+          className="transition-all duration-500"
+        />
+      </svg>
+      <span className="absolute text-[11px] font-bold" style={{ color }}>
+        {value}
+      </span>
     </div>
   );
 }
 
+// ─── Salary Formatter ──────────────────────────────────────────────────────────
+
+function formatSalary(min: number | null, max: number | null, currency: string, type: string | null): string | null {
+  if (!min && !max) return null;
+  const c = currency === 'USD' ? '$' : `${currency} `;
+  const suffix = type === 'hourly' ? '/hr' : type === 'monthly' ? '/mo' : type === 'yearly' ? '/yr' : '';
+  if (min && max) return `${c}${min.toLocaleString()} – ${c}${max.toLocaleString()}${suffix}`;
+  if (min) return `From ${c}${min.toLocaleString()}${suffix}`;
+  return `Up to ${c}${(max ?? 0).toLocaleString()}${suffix}`;
+}
+
+function timeAgo(dateStr: string | null): string {
+  if (!dateStr) return '';
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const days = Math.floor(diff / 86400000);
+  if (days < 1) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  return `${Math.floor(months / 12)}y ago`;
+}
+
+// ─── Job Card ──────────────────────────────────────────────────────────────────
+
+function JobCard({
+  job,
+  onToggleSave,
+  onViewDetails,
+}: {
+  job: JobItem;
+  onToggleSave: (jobId: string, isSaved: boolean) => void;
+  onViewDetails: (job: JobItem) => void;
+}) {
+  const saving = useRef(false);
+
+  const handleSave = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (saving.current) return;
+    saving.current = true;
+    const newSaved = !job.isSaved;
+    onToggleSave(job.id, newSaved);
+    try {
+      const res = await fetch('/api/jobs', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId: job.id, isSaved: newSaved }),
+      });
+      if (!res.ok) {
+        onToggleSave(job.id, job.isSaved);
+        toast.error('Failed to update save status');
+      }
+    } catch {
+      onToggleSave(job.id, job.isSaved);
+      toast.error('Failed to update save status');
+    } finally {
+      saving.current = false;
+    }
+  };
+
+  const salaryStr = formatSalary(job.salaryMin, job.salaryMax, job.salaryCurrency, job.salaryType);
+  const visibleSkills = job.skills.slice(0, 5);
+  const remainingSkills = job.skills.length - 5;
+
+  return (
+    <Card className="hover:shadow-md transition-shadow">
+      <CardContent className="p-4">
+        {/* Top: source badge + save */}
+        <div className="flex items-start justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="text-[10px] capitalize">
+              {job.source}
+            </Badge>
+            {job.isApplied && (
+              <Badge className="text-[10px] bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">
+                <CheckCircle className="h-3 w-3 mr-1" />
+                Applied
+              </Badge>
+            )}
+          </div>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  onClick={handleSave}
+                  aria-label={job.isSaved ? 'Unsave job' : 'Save job'}
+                >
+                  {job.isSaved ? (
+                    <BookmarkCheck className="h-4 w-4 text-primary" />
+                  ) : (
+                    <Bookmark className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{job.isSaved ? 'Unsave' : 'Save'}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+
+        {/* Title + Company */}
+        <h3 className="font-semibold text-sm mb-0.5 line-clamp-1">{job.title}</h3>
+        <p className="text-xs text-muted-foreground mb-3">{job.company}</p>
+
+        {/* Match Score + Salary + Location */}
+        <div className="flex items-center gap-4 mb-3">
+          <MatchScoreRing score={job.matchScore} />
+          <div className="flex-1 min-w-0 space-y-1">
+            {salaryStr && (
+              <div className="flex items-center gap-1.5 text-sm">
+                <DollarSign className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <span className="font-medium truncate">{salaryStr}</span>
+              </div>
+            )}
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              {job.location && (
+                <>
+                  <MapPin className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{job.location}</span>
+                  {job.remote && <span className="shrink-0">·</span>}
+                </>
+              )}
+              {job.remote && (
+                <Badge variant="secondary" className="text-[10px] gap-1 shrink-0">
+                  <Wifi className="h-2.5 w-2.5" />
+                  Remote
+                </Badge>
+              )}
+            </div>
+            {job.postedAt && (
+              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <Clock className="h-3 w-3 shrink-0" />
+                <span>{timeAgo(job.postedAt)}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Skills */}
+        {visibleSkills.length > 0 && (
+          <div className="flex flex-wrap gap-1 mb-3">
+            {visibleSkills.map((s) => (
+              <Badge key={s} variant="secondary" className="text-[10px] font-normal">
+                {s}
+              </Badge>
+            ))}
+            {remainingSkills > 0 && (
+              <Badge variant="outline" className="text-[10px] font-normal">
+                +{remainingSkills} more
+              </Badge>
+            )}
+          </div>
+        )}
+
+        {/* View Details Button */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full h-8 text-xs"
+          onClick={() => onViewDetails(job)}
+        >
+          <Eye className="h-3.5 w-3.5 mr-1.5" />
+          View Details
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Loading Skeleton ─────────────────────────────────────────────────────────
+
+function JobsSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Card key={i}>
+            <CardContent className="p-4 space-y-3">
+              <div className="flex justify-between">
+                <Skeleton className="h-5 w-20 rounded-full" />
+                <Skeleton className="h-8 w-8 rounded-lg" />
+              </div>
+              <Skeleton className="h-4 w-3/4" />
+              <Skeleton className="h-3 w-1/2" />
+              <div className="flex items-center gap-3">
+                <Skeleton className="h-11 w-11 rounded-full" />
+                <div className="flex-1 space-y-1.5">
+                  <Skeleton className="h-3.5 w-32" />
+                  <Skeleton className="h-3 w-24" />
+                </div>
+              </div>
+              <div className="flex gap-1">
+                {Array.from({ length: 3 }).map((_, j) => (
+                  <Skeleton key={j} className="h-5 w-14 rounded-full" />
+                ))}
+              </div>
+              <Skeleton className="h-8 w-full" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Job Detail Dialog ─────────────────────────────────────────────────────────
+
+function JobDetailDialog({
+  job,
+  open,
+  onClose,
+  onToggleSave,
+}: {
+  job: JobItem | null;
+  open: boolean;
+  onClose: () => void;
+  onToggleSave: (jobId: string, isSaved: boolean) => void;
+}) {
+  if (!job) return null;
+
+  const salaryStr = formatSalary(job.salaryMin, job.salaryMax, job.salaryCurrency, job.salaryType);
+
+  const handleApply = () => {
+    toast.success(`Application started for "${job.title}" at ${job.company}`);
+  };
+
+  const handleSave = () => {
+    const newSaved = !job.isSaved;
+    onToggleSave(job.id, newSaved);
+    fetch('/api/jobs', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jobId: job.id, isSaved: newSaved }),
+    });
+    toast.success(newSaved ? 'Job saved!' : 'Job unsaved');
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl max-h-[85vh]">
+        <DialogHeader>
+          <DialogTitle className="text-lg">{job.title}</DialogTitle>
+          <DialogDescription className="flex items-center gap-2 text-sm">
+            {job.company}
+            {job.location && (
+              <>
+                <span>·</span>
+                <span className="flex items-center gap-1">
+                  <MapPin className="h-3.5 w-3.5" />
+                  {job.location}
+                </span>
+              </>
+            )}
+            {job.remote && (
+              <>
+                <span>·</span>
+                <Badge variant="secondary" className="text-[10px]">Remote</Badge>
+              </>
+            )}
+          </DialogDescription>
+        </DialogHeader>
+
+        <ScrollArea className="max-h-[60vh] pr-2">
+          <div className="space-y-4">
+            {/* Meta row */}
+            <div className="flex flex-wrap items-center gap-3">
+              <Badge variant="outline" className="capitalize">{job.source}</Badge>
+              {job.jobType && <Badge variant="outline" className="capitalize">{job.jobType.replace('_', ' ')}</Badge>}
+              {job.experienceLevel && <Badge variant="outline" className="capitalize">{job.experienceLevel}</Badge>}
+              {job.postedAt && (
+                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Clock className="h-3 w-3" /> {timeAgo(job.postedAt)}
+                </span>
+              )}
+              {job.matchScore !== null && (
+                <Badge variant={job.matchScore >= 70 ? 'default' : 'secondary'}>
+                  {job.matchScore}% Match
+                </Badge>
+              )}
+            </div>
+
+            {/* Salary */}
+            {salaryStr && (
+              <div className="flex items-center gap-2 text-sm">
+                <DollarSign className="h-4 w-4 text-green-600" />
+                <span className="font-medium">{salaryStr}</span>
+              </div>
+            )}
+
+            {/* Skills */}
+            {job.skills.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Skills</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {job.skills.map((s) => (
+                    <Badge key={s} variant="secondary" className="text-xs">{s}</Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Description */}
+            {job.description && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Description</p>
+                <p className="text-sm leading-relaxed whitespace-pre-wrap">{job.description}</p>
+              </div>
+            )}
+
+            {/* Requirements */}
+            {job.requirements && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Requirements</p>
+                <p className="text-sm leading-relaxed whitespace-pre-wrap">{job.requirements}</p>
+              </div>
+            )}
+          </div>
+        </ScrollArea>
+
+        {/* Actions */}
+        <div className="flex flex-wrap gap-2 pt-2 border-t">
+          <Button onClick={handleApply} className="flex-1">
+            <CheckCircle className="h-4 w-4 mr-2" />
+            Apply
+          </Button>
+          <Button variant="outline" onClick={handleSave}>
+            {job.isSaved ? <BookmarkCheck className="h-4 w-4 mr-2" /> : <Bookmark className="h-4 w-4 mr-2" />}
+            {job.isSaved ? 'Saved' : 'Save'}
+          </Button>
+          <a href={job.sourceUrl} target="_blank" rel="noopener noreferrer">
+            <Button variant="outline">
+              <ExternalLink className="h-4 w-4 mr-2" />
+              Source
+            </Button>
+          </a>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
 export default function JobsPanel() {
-  const [jobs, setJobs] = useState<Job[]>([]);
+  const [jobs, setJobs] = useState<JobItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [sourceType, setSourceType] = useState('');
   const [remoteOnly, setRemoteOnly] = useState(false);
   const [sortBy, setSortBy] = useState('matchScore');
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
-  const [isScraping, setIsScraping] = useState(false);
-  const [scrapeResults, setScrapeResults] = useState<{ source: string; jobsFound: number; jobsNew: number }[]>([]);
-  const [scrapeVisible, setScrapeVisible] = useState(false);
+  const [sortOrder, setSortOrder] = useState('desc');
+  const [detailJob, setDetailJob] = useState<JobItem | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+
+  // Scrape state
+  const [scraping, setScraping] = useState(false);
+  const [scrapeResult, setScrapeResult] = useState<ScrapeResult | null>(null);
+
+  const limit = 50;
+
+  const buildParams = useCallback((): string => {
+    const params = new URLSearchParams();
+    if (search.trim()) params.set('search', search.trim());
+    if (sourceType) params.set('sourceType', sourceType);
+    if (remoteOnly) params.set('remote', 'true');
+    params.set('sortBy', sortBy);
+    params.set('sortOrder', sortOrder);
+    params.set('limit', String(limit));
+    params.set('page', String(page));
+    return params.toString();
+  }, [search, sourceType, remoteOnly, sortBy, sortOrder, page]);
+
+  const fetchJobs = useCallback(async () => {
+    setLoading(true);
+    try {
+      const query = buildParams();
+      const res = await fetch(`/api/jobs?${query}`);
+      if (res.ok) {
+        const data: JobsResponse = await res.json();
+        setJobs((prev) => (page === 1 ? data.jobs : [...prev, ...data.jobs]));
+        setTotal(data.total);
+      }
+    } catch {
+      // silent
+    } finally {
+      setLoading(false);
+    }
+  }, [buildParams, page]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [search, sourceType, remoteOnly, sortBy, sortOrder]);
 
   useEffect(() => {
-    let cancelled = false;
-    async function fetchJobs() {
-      try {
-        const params = new URLSearchParams({ sortBy, sortOrder: 'desc', limit: '50' });
-        const res = await fetch(`/api/jobs?${params}`);
-        const json = await res.json();
-        if (!cancelled) { setJobs(json.jobs || []); setLoading(false); }
-      } catch { if (!cancelled) setLoading(false); }
-    }
     fetchJobs();
-    return () => { cancelled = true; };
-  }, [sortBy]);
+  }, [fetchJobs]);
 
-  const filteredJobs = useMemo(() => {
-    let result = [...jobs];
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(j => j.title.toLowerCase().includes(q) || j.company.toLowerCase().includes(q) || j.skills.some(s => s.toLowerCase().includes(q)));
+  const hasMore = jobs.length < total;
+
+  const handleLoadMore = () => {
+    setPage((p) => p + 1);
+  };
+
+  const handleToggleSave = useCallback((jobId: string, isSaved: boolean) => {
+    setJobs((prev) => prev.map((j) => (j.id === jobId ? { ...j, isSaved } : j)));
+    if (detailJob?.id === jobId) {
+      setDetailJob((prev) => (prev ? { ...prev, isSaved } : prev));
     }
-    if (activeFilter !== 'all') result = result.filter(j => j.sourceType === activeFilter);
-    if (remoteOnly) result = result.filter(j => j.remote);
-    return result;
-  }, [jobs, searchQuery, activeFilter, remoteOnly]);
+  }, [detailJob]);
+
+  const handleViewDetails = useCallback((job: JobItem) => {
+    setDetailJob(job);
+    setDetailOpen(true);
+  }, []);
 
   const handleScrape = async (aiOnly: boolean) => {
-    setIsScraping(true);
-    setScrapeVisible(false);
+    setScraping(true);
+    setScrapeResult(null);
     try {
-      const body = aiOnly ? {} : {};
-      const res = await fetch('/api/scrape', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      const json = await res.json();
-      setScrapeResults(json.results || []);
-      setScrapeVisible(true);
-      setTimeout(() => setScrapeVisible(false), 5000);
-      // Refresh jobs
-      const params = new URLSearchParams({ sortBy, sortOrder: 'desc', limit: '50' });
-      const jobRes = await fetch(`/api/jobs?${params}`);
-      const jobJson = await jobRes.json();
-      setJobs(jobJson.jobs || []);
-    } catch {}
-    setIsScraping(false);
+      const body: { aiOnly?: boolean } = {};
+      if (aiOnly) body.aiOnly = true;
+      const res = await fetch('/api/scrape', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const data: ScrapeResult = await res.json();
+        setScrapeResult(data);
+        toast.success(`Scraping complete: ${data.totalJobsFound} jobs found, ${data.totalJobsNew} new`);
+        // Refresh jobs
+        setPage(1);
+        fetchJobs();
+      } else {
+        toast.error('Scraping failed');
+      }
+    } catch {
+      toast.error('Scraping failed');
+    } finally {
+      setScraping(false);
+    }
   };
 
   return (
     <div className="space-y-4">
-      {/* Scrape Bar */}
+      {/* Scrape Buttons */}
       <div className="flex flex-wrap gap-2">
-        <Button onClick={() => handleScrape(false)} disabled={isScraping} className="text-xs">
-          {isScraping ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <RefreshCw className="w-3.5 h-3.5 mr-1.5" />}
+        <Button onClick={() => handleScrape(false)} disabled={scraping} size="sm">
+          {scraping ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
           Scrape All Sources
         </Button>
-        <Button variant="outline" onClick={() => handleScrape(true)} disabled={isScraping} className="text-xs">
-          Scrape AI Training Only
+        <Button onClick={() => handleScrape(true)} disabled={scraping} variant="outline" size="sm">
+          {scraping ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+          AI Training Only
         </Button>
       </div>
 
-      {scrapeVisible && scrapeResults.length > 0 && (
-        <Card className="border-emerald-200 dark:border-emerald-800">
-          <CardContent className="p-3">
-            <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400 mb-2">Scraping Results</p>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead><tr className="border-b border-border"><th className="text-left py-1 pr-4 font-medium text-muted-foreground text-xs">Source</th><th className="text-right py-1 px-4 font-medium text-muted-foreground text-xs">Jobs Found</th><th className="text-right py-1 pl-4 font-medium text-muted-foreground text-xs">New Jobs</th></tr></thead>
-                <tbody>{scrapeResults.map((r, i) => (<tr key={i} className="border-b border-border/50 last:border-0"><td className="py-1.5 pr-4 text-sm">{r.source}</td><td className="py-1.5 px-4 text-sm text-right tabular-nums">{r.jobsFound}</td><td className="py-1.5 pl-4 text-sm text-right tabular-nums text-emerald-600 font-medium">+{r.jobsNew}</td></tr>))}</tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
+      {/* Scrape Results Banner */}
+      {scrapeResult && (
+        <div className="rounded-lg border border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20 px-4 py-3 flex items-start gap-3">
+          <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-green-800 dark:text-green-200">
+              Scraping Complete
+            </p>
+            <p className="text-xs text-green-700 dark:text-green-300 mt-0.5">
+              {scrapeResult.sourcesScraped} sources scraped · {scrapeResult.totalJobsFound} jobs found · {scrapeResult.totalJobsNew} new jobs
+            </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-xs text-green-700 dark:text-green-300 p-0 mt-1"
+              onClick={() => setScrapeResult(null)}
+            >
+              <X className="h-3 w-3 mr-1" /> Dismiss
+            </Button>
+          </div>
+        </div>
       )}
 
-      {/* Filters */}
-      <div className="bg-card rounded-xl border border-border/50 p-3 space-y-3">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-          <div className="relative flex-1 min-w-0">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-            <Input placeholder="Search by title, company, or skills..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 h-9" />
-          </div>
-          <Select value={sortBy} onValueChange={setSortBy}>
-            <SelectTrigger className="w-[150px] h-9"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="matchScore">Match Score</SelectItem>
-              <SelectItem value="salary">Salary</SelectItem>
-              <SelectItem value="date">Date Posted</SelectItem>
-            </SelectContent>
-          </Select>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground whitespace-nowrap">Remote</span>
-            <Switch checked={remoteOnly} onCheckedChange={setRemoteOnly} />
-          </div>
+      {/* Search & Filters */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search jobs…"
+            className="pl-9"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </div>
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-          {SOURCE_FILTER_OPTIONS.map((opt) => (
-            <button key={opt.value} onClick={() => setActiveFilter(activeFilter === opt.value ? 'all' : opt.value)} className={`px-3 py-1 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${activeFilter === opt.value ? 'bg-emerald-500 text-white' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>
-              {opt.label}
-            </button>
-          ))}
+
+        <Select value={sortBy} onValueChange={(v) => setSortBy(v)}>
+          <SelectTrigger className="w-[140px] h-9 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SORT_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={o.value} className="text-xs">
+                Sort: {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-xs text-muted-foreground">Remote</span>
+          <Switch checked={remoteOnly} onCheckedChange={setRemoteOnly} />
         </div>
-        <p className="text-xs text-muted-foreground">Showing {filteredJobs.length} of {jobs.length} jobs</p>
       </div>
 
-      {/* Job List */}
-      {loading ? (
-        <div className="space-y-3">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-40 rounded-xl" />)}</div>
-      ) : filteredJobs.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <Search className="w-10 h-10 text-muted-foreground/40 mb-3" />
-          <p className="text-sm text-muted-foreground">No jobs match your filters.</p>
-        </div>
-      ) : (
-        <div className="max-h-[calc(100vh-320px)] overflow-y-auto space-y-3 pr-1">
-          {filteredJobs.map((job) => (
-            <JobCard key={job.id} job={job} onClick={() => { setSelectedJob(job); setDialogOpen(true); }} />
-          ))}
-        </div>
+      {/* Source Type Pills */}
+      <div className="flex flex-wrap gap-1.5">
+        {SOURCE_TYPE_OPTIONS.map((opt) => (
+          <Button
+            key={opt.value}
+            variant={sourceType === opt.value ? 'default' : 'outline'}
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setSourceType(opt.value)}
+          >
+            {opt.label}
+          </Button>
+        ))}
+      </div>
+
+      {/* Job Count */}
+      {!loading && (
+        <p className="text-xs text-muted-foreground">
+          Showing {jobs.length} of {total} jobs
+        </p>
       )}
 
-      {/* Job Detail Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
-          {selectedJob && (
-            <>
-              <DialogHeader>
-                <div className="flex items-center gap-2 mb-1">
-                  <Badge variant="outline" className={`text-[10px] ${sourceTypeBadgeClass[selectedJob.sourceType] ?? ''}`}>{selectedJob.sourceType.replace('_', ' ')}</Badge>
-                  {selectedJob.remote && <Badge variant="outline" className="text-[10px] bg-teal-50 text-teal-700">Remote</Badge>}
-                </div>
-                <DialogTitle className="text-lg">{selectedJob.title}</DialogTitle>
-                <DialogDescription>{selectedJob.company} {selectedJob.location && `— ${selectedJob.location}`}</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 mt-2">
-                <div className="flex flex-wrap gap-2">
-                  {selectedJob.skills.map((s) => <Badge key={s} variant="secondary" className="text-xs">{s}</Badge>)}
-                </div>
-                <div>
-                  <h4 className="text-sm font-semibold mb-1">Description</h4>
-                  <p className="text-sm text-muted-foreground leading-relaxed">{selectedJob.description}</p>
-                </div>
-                {selectedJob.requirements && (
-                  <div>
-                    <h4 className="text-sm font-semibold mb-1">Requirements</h4>
-                    <p className="text-sm text-muted-foreground leading-relaxed">{selectedJob.requirements}</p>
-                  </div>
-                )}
-                <div className="flex gap-2 pt-2">
-                  <Button size="sm" className="text-xs" onClick={() => window.open(selectedJob.sourceUrl, '_blank')}>
-                    <ExternalLink className="w-3.5 h-3.5 mr-1" /> View on {selectedJob.source}
-                  </Button>
-                  <Button size="sm" variant="outline" className="text-xs" onClick={() => { setDialogOpen(false); }}>
-                    Close
-                  </Button>
-                </div>
-              </div>
-            </>
+      {/* Jobs Grid */}
+      {page === 1 && loading ? (
+        <JobsSkeleton />
+      ) : jobs.length === 0 ? (
+        <Card>
+          <CardContent className="py-16 text-center">
+            <Briefcase className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-40" />
+            <p className="text-sm text-muted-foreground">No jobs found. Try adjusting your filters.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {jobs.map((job) => (
+              <JobCard
+                key={job.id}
+                job={job}
+                onToggleSave={handleToggleSave}
+                onViewDetails={handleViewDetails}
+              />
+            ))}
+          </div>
+
+          {loading && page > 1 && (
+            <div className="flex justify-center py-4">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
           )}
-        </DialogContent>
-      </Dialog>
+
+          {hasMore && !loading && (
+            <div className="flex justify-center">
+              <Button variant="outline" onClick={handleLoadMore}>
+                Load More ({total - jobs.length} remaining)
+              </Button>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Detail Dialog */}
+      <JobDetailDialog
+        job={detailJob}
+        open={detailOpen}
+        onClose={() => setDetailOpen(false)}
+        onToggleSave={handleToggleSave}
+      />
     </div>
   );
 }

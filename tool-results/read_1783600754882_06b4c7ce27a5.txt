@@ -1,0 +1,340 @@
+     1→     1→
+     2→     2→
+     3→     3→
+     4→     4→
+     5→     5→
+     6→     6→
+     7→     7→YoungSharkJobHunter
+     8→     8→System Architecture & Technical Specification
+     9→     9→
+    10→    10→Version 1.0
+    11→    11→Classification: Confidential
+    12→    12→Date: July 2026
+    13→    13→
+    14→    14→Product Vision
+    15→    15→YoungSharkJobHunter is an autonomous AI-powered Career Operating System that continuously discovers job opportunities from 55+ sources including AI training platforms (Outlier, Scale AI, DataAnnotation), research labs (OpenAI, Anthropic, DeepMind), big tech (Google, Microsoft, Amazon), and ATS platforms (Greenhouse, Lever, Ashby). Unlike traditional job boards, it functions as an intelligent career agent that normalizes job data across sources, builds structured career profiles, generates ATS-optimized application materials, scores job matches using embeddings, tracks application pipelines, identifies skill gaps, and learns from outcomes to continuously improve recommendations.
+    16→    16→Architecture Philosophy
+    17→    17→The system follows Domain-Driven Design (DDD) with Clean Architecture principles. All modules communicate through an event-driven architecture using domain events. Each bounded context encapsulates a core domain capability. Adapters handle external integrations (job sources, email, browser automation) through well-defined ports. The system is designed as a modular monolith with clear extraction paths to microservices for scalability bottlenecks.
+    18→    18→
+    19→    19→System Architecture Overview
+    20→    20→See System Architecture Diagram (Figure 1) for the high-level system architecture. The system is organized into seven core layers: (1) Presentation Layer — Next.js 16 with React, Tailwind CSS, and shadcn/ui, (2) Application Layer — REST API with versioned endpoints, JWT authentication, and rate limiting, (3) Application Services — Use cases including Resume Engine, Job Matching, Application Workflow, and Cover Letter Generation, (4) Domain Layer — Core domain models (Job, Company, Application, Resume, User, Skill) with domain events, (5) Infrastructure Services — Connector framework, notification workers, scraping scheduler, and vector embedding service, (6) Integration Adapters — Modular connectors for Greenhouse, Lever, Ashby, RemoteOK, LinkedIn, etc., (7) Data Layer — PostgreSQL for relational data, Redis for caching and job queues, Qdrant for vector embeddings, and S3-compatible object storage. All layers communicate through an internal event bus using domain events.
+    21→    21→
+    22→    22→Modular Architecture & Module Decomposition
+    23→    23→The system is decomposed into focused, independently maintainable modules. Each module owns a clear slice of domain responsibility and exposes its capabilities through well-defined interfaces. This decomposition enables parallel development, targeted testing, and the ability to extract any module into a standalone microservice when scalability demands it.
+    24→    24→
+    25→    25→
+    26→    26→Domain Model
+    27→    27→The domain model captures the core entities of the system and their relationships. Each entity encapsulates business rules and invariants within its bounded context. The model is designed to reflect the ubiquity of job-seeking workflows while remaining flexible for future domain extensions.
+    28→    28→
+    29→    29→
+    30→    30→Bounded Contexts
+    31→    31→Following Domain-Driven Design principles, the system is partitioned into bounded contexts. Each context owns its domain services, defines its own ubiquitous language, and communicates with other contexts exclusively through domain events. This isolation ensures that changes within one context do not cascade unpredictably into others.
+    32→    32→
+    33→    33→
+    34→    34→Event Catalog
+    35→    35→The event catalog defines all domain events that flow through the system's internal event bus. Each event represents a significant state change or business occurrence. Events are immutable, carry descriptive payloads, and enable loose coupling between bounded contexts.
+    36→    36→
+    37→    37→
+    38→    38→API Design
+    39→    39→The system exposes a versioned REST API that serves as the primary integration point for the frontend application and future client SDKs. All endpoints follow consistent conventions for authentication, error handling, and response formatting.
+    40→    40→API Conventions
+    41→    41→REST with JSON: All endpoints accept and return JSON. Standard HTTP methods (GET, POST, PATCH, DELETE) convey intent.
+    42→    42→Versioned endpoints: All routes are prefixed with /api/v1/ to allow independent evolution of API versions without breaking existing clients.
+    43→    43→JWT authentication: Authentication tokens are passed via the Authorization header using the Bearer scheme. Tokens are short-lived and refreshed via a separate endpoint.
+    44→    44→Rate limiting: Default rate limit of 100 requests per minute per user. Rate limit headers (X-RateLimit-*) are included in responses.
+    45→    45→CORS configuration: Configured per environment. Development allows all origins; production restricts to known domains.
+    46→    46→Error response format: Errors follow the structure: { error: string, message: string, code: number, details?: object }.
+    47→    47→Success response format: Paginated responses use: { data: object | null, meta: { page, limit, total } }.
+    48→    48→Endpoints
+    49→    49→
+    50→    50→
+    51→    51→AI Agent Architecture
+    52→    52→The system employs a multi-agent architecture where specialized AI agents handle distinct career workflow tasks. Each agent has a focused responsibility, a defined input/output contract, and operates either on-demand (request-response) or on a schedule. Agents communicate through the domain event bus, enabling a composable and extensible intelligence layer.
+    53→    53→Agent Types
+    54→    54→
+    55→    55→Communication Pattern
+    56→    56→Agents communicate through an internal event bus. Each agent subscribes to domain events relevant to its responsibility. For example, the Discovery Agent publishes job.discovered events, which the Resume Agent and ATS Agent consume. The Market Intelligence Agent operates on a schedule, analyzing aggregated data. The Career Coach Agent synthesizes information from all agents to provide holistic career advice.
+    57→    57→
+    58→    58→Connector Architecture
+    59→    59→The connector framework provides a modular, extensible pattern for integrating with external job sources. Each source is implemented as a self-contained connector that adheres to a common interface. This design allows new sources to be added without modifying existing code, following the Open/Closed principle.
+    60→    60→Connector Interface
+    61→    61→All connectors implement the JobSourceConnector interface, which defines the contract for discovery, fetching, normalization, validation, and rate limiting. This ensures consistent behavior across all source integrations.
+    62→    62→interface JobSourceConnector {
+    63→    63→  sourceId: string;
+    64→    64→  sourceName: string;
+    65→    65→  discover(): Promise<DiscoveredJob[]>;
+    66→    66→  fetchJobs(): Promise<RawJob[]>;
+    67→    67→  normalize(job: RawJob): NormalizedJob;
+    68→    68→  validate(job: NormalizedJob): boolean;
+    69→    69→  rateLimit: { requestsPerMinute: number };
+    70→    70→  isAvailable(): boolean;
+    71→    71→}
+    72→    72→Connector Registry Pattern
+    73→    73→Each connector is registered in a ConnectorRegistry. The registry manages lifecycle, health checks, rate limiting, and error handling per connector. New connectors can be added without modifying existing code.
+    74→    74→Source Type Categories
+    75→    75→Job sources are categorized by type, each with distinct scraping strategies and normalization rules. The following table summarizes the source categories and their known integrations.
+    76→    76→
+    77→    77→
+    78→    78→Search Architecture
+    79→    79→Search uses a hybrid approach combining keyword matching (PostgreSQL full-text) with semantic vector search (Qdrant). Job descriptions, resumes, and skill data are embedded using sentence-transformer models. The SearchService accepts natural language queries and returns ranked results using a two-stage pipeline: (1) keyword pre-filter to narrow candidates, (2) vector similarity re-ranking of the top N results for precision. The vector index is updated incrementally as new jobs and resumes are processed.
+    80→    80→This hybrid approach ensures both recall (through keyword matching) and relevance (through semantic understanding). The two-stage pipeline is critical for performance at scale: keyword filtering reduces the candidate set from millions to thousands, and vector re-ranking applies computationally expensive similarity calculations only on that reduced set.
+    81→    81→
+    82→    82→Database Design
+    83→    83→The system employs a polyglot persistence strategy, selecting the optimal storage technology for each access pattern. This approach avoids the impedance mismatch that arises from forcing all data into a single database model.
+    84→    84→PostgreSQL
+    85→    85→Primary relational database for jobs, applications, users, companies, and application metadata. Chosen for ACID compliance, mature tooling, full-text search capabilities, and JSON column support for semi-structured data such as skill arrays and preference objects.
+    86→    86→Redis
+    87→    87→Queue management for scraping jobs and notifications. Caching for API responses, session data, and rate limiters. Redis is chosen for its sub-millisecond latency and native support for sorted sets, which power the job ranking queues.
+    88→    88→Qdrant
+    89→    89→Vector database for storing job description and resume embeddings. Enables semantic similarity search across millions of jobs. Qdrant is selected for its filtering capabilities, horizontal scalability, and native gRPC support for low-latency queries.
+    90→    90→S3-compatible Object Storage
+    91→    91→Stores generated resumes (PDF/DOCX), cover letters, and portfolio documents. Object storage provides cost-effective, durable binary storage with CDN integration for fast downloads.
+    92→    92→Design Pattern
+    93→    93→Each storage technology is selected based on its access pattern. Relational queries use PostgreSQL. Queue operations use Redis. Vector search uses Qdrant. Large binary files (resumes) use object storage. This separation ensures each component operates at peak efficiency.
+    94→    94→
+    95→    95→Security Architecture
+    96→    96→Security is layered throughout the architecture, from transport encryption to application-level authorization. The following subsections describe the security measures applied at each layer of the system.
+    97→    97→Authentication
+    98→    98→JWT with short-lived access tokens and HTTP-only refresh tokens. Token rotation every 15 minutes. Supports optional OAuth2 for social login. Tokens include claims for user identity, role, and subscription tier. Refresh tokens are stored securely with rotation on each use to prevent replay.
+    99→    99→Authorization
+   100→   100→Role-Based Access Control with roles: viewer, applicant, admin. Resources scoped to user's own data. Admin role can manage all sources and users. Authorization checks are enforced at the API layer and reinforced at the data access layer to prevent privilege escalation.
+   101→   101→Data Protection
+   102→   102→All PII encrypted at rest. AES-256 for file storage. Database-level encryption for sensitive fields. Resume data stored with user-controlled access. Encryption keys are managed through a dedicated key management service with automatic rotation.
+   103→   103→API Security
+   104→   104→Input validation, output encoding, CSRF protection (double-submit cookie pattern), rate limiting, API key rotation, helmet middleware for security headers. All user input is sanitized and validated against strict schemas before processing.
+   105→   105→File Security
+   106→   106→Malware scanning for uploaded resumes. File type validation. Size limits (10MB max). Virus scanning via ClamAV integration. Uploaded files are stored in isolated containers with no execute permissions.
+   107→   107→
+   108→   108→Infrastructure Architecture
+   109→   109→Infrastructure is designed for horizontal scaling with vertical partitioning. The application runs on Kubernetes with the following components: (1) Next.js server pods with HPA (1-3 replicas), (2) Redis cluster for job queues and caching, (3) Qdrant for vector search, (4) PostgreSQL cluster with read replicas, (5) S3-compatible storage for generated documents. Each component scales independently. Worker services (scraping, notifications) run as separate deployments with their own lifecycle. Ingress controllers manage API routing. A Kubernetes CronJob triggers scheduled scraping runs.
+   110→   110→This architecture ensures that the presentation layer, application services, background workers, and data stores can each scale according to their own demand curves. The Kubernetes orchestration layer provides self-healing, rolling updates, and resource management across the entire stack.
+   111→   111→
+   112→   112→Deployment Strategy
+   113→   113→The deployment strategy defines three environments, each tailored to a stage of the development lifecycle. Environments increase in fidelity and operational rigor as code progresses toward production.
+   114→   114→Development
+   115→   115→Local Docker Compose with hot reload. PostgreSQL and Redis via containers. Object storage uses local volume mount. Mock services or real API keys. Developers get a full local stack with a single docker-compose up command.
+   116→   116→Staging
+   117→   117→Kubernetes cluster with managed database (RDS/Cloud SQL). GitHub Actions CI/CD pipeline. Blue-green deployments. Preview environments per PR. Staging mirrors production configuration to catch environment-specific issues before release.
+   118→   118→Production
+   119→   119→Multi-region Kubernetes deployment. Global load balancer (ALB/CloudFront). Multi-AZ with auto-scaling. RDS Multi-AZ with read replicas. ElastiCache (Redis). CloudFront WAF + DDoS protection. CDN for static assets. Automated backups with point-in-time recovery.
+   120→   120→
+   121→   121→Monitoring & Observability
+   122→   122→Structured logging with correlation IDs (trace_id). OpenTelemetry metrics export. Health check endpoints (/health, /ready) with dependency status. Distributed tracing with sampling. Performance dashboards (p50, p95, p99 latencies, request rate). Error monitoring with alerting (Sentry-compatible). Audit log for all state changes. Custom dashboards for scraping health, connector status, match score distribution, and application funnel conversion rates.
+   123→   123→The observability stack is designed around the three pillars: logs, metrics, and traces. Every request carries a trace_id that propagates through all service boundaries, enabling end-to-end request reconstruction. Alerts are configured for anomaly detection on critical business metrics such as scraping failure rates, API error spikes, and application pipeline drop-off.
+   124→   124→
+   125→   125→Scalability Roadmap
+   126→   126→The following phased roadmap defines the progression from initial core engine delivery through full platform maturity. Each phase builds on the previous, with clear deliverables and scaling targets that align with business growth milestones.
+   127→   127→
+   128→   128→
+   129→   129→Implementation Roadmap
+   130→   130→The implementation roadmap decomposes the scalability phases into 12 two-week sprints. Each sprint focuses on a coherent set of deliverables that incrementally build the system's capabilities. Story point estimates reflect relative complexity and effort.
+   131→   131→
+   132→   132→
+   133→   133→Folder Structure
+   134→   134→The project follows a convention-based folder structure that aligns with Next.js 16 app router patterns while maintaining clear separation between API routes, domain services, and infrastructure code. The structure supports both the modular monolith and future microservice extraction.
+   135→   135→src/
+   136→   136→├── app/
+   137→   137→│   ├── api/v1/                  # Versioned REST API
+   138→   138→│   │   ├── jobs/
+   139→   139→│   │   ├── sources/
+   140→   140→│   │   ├── applications/
+   141→   141→│   │   ├── resumes/
+   142→   142→│   │   ├── chat/
+   143→   143→│   │   ├── dashboard/
+   144→   144→│   │   ├── skills/
+   145→   145→│   │   ├── salary/
+   146→   146→│   │   ├── admin/
+   147→   147→│   │   └── health.ts
+   148→   148→│   ├── components/
+   149→   149→│   │   ├── panels/             # Main feature panels
+   150→   150→│   │   ├── ui/                 # shadcn/ui components
+   151→   151→│   │   └── layout.tsx
+   152→   152→│   └── pages/
+   153→   153→│       └── page.tsx
+   154→   154→├── src/
+   155→   155→│   ├── lib/
+   156→   156→│   │   ├── db.ts               # Prisma client
+   157→   157→│   │   ├── utils.ts
+   158→   158→│   │   ├── store.ts            # Zustand state
+   159→   159→│   │   ├── types.ts            # TypeScript types
+   160→   160→│   │   ├── mock-data.ts        # Mock/seed data
+   161→   161→│   │   └── connectors/            # Job source connectors
+   162→   162→│   │       ├── types.ts
+   163→   163→│   │       ├── base-connector.ts
+   164→   164→│   │       ├── greenhouse.ts
+   165→   165→│   │       ├── lever.ts
+   166→   166→│   │       ├── ashby.ts
+   167→   167→│   │       └── registry.ts
+   168→   168→│   └── services/                # Domain services
+   169→   169→│       ├── discovery.ts
+   170→   170→│       ├── company.ts
+   171→   171→│       ├── matching.ts
+   172→   172→│       ├── scraping.ts
+   173→   173→│       └── events.ts           # Domain events
+   174→   174→├── prisma/
+   175→   175→│   └── schema.prisma
+   176→   176→├── mini-services/              # Background workers
+   177→   177→│   └── scraper-worker/
+   178→   178→├── scripts/                    # Build and utility scripts
+   179→   179→└── docs/                      # Generated architecture docs
+   180→   180→
+   181→   181→Coding Standards
+   182→   182→Consistent coding standards are essential for maintaining code quality across a growing codebase. The following standards apply to all contributors and are enforced through linters, formatters, and CI checks.
+   183→   183→Naming Conventions
+   184→   184→camelCase for all TypeScript/TSX variables, functions, and file names. snake_case for database columns and Prisma model fields. UPPER_SNAKE_CASE for environment variables and constants. PascalCase for React components, classes, interfaces, and types. Kebab-case for CSS class names and URL slugs.
+   185→   185→File Organization
+   186→   186→One component per file. Co-located test files using the .test.ts/.test.tsx suffix. Barrel exports (index.ts) for module boundaries. Shared utilities in the lib/ directory. Feature-specific code lives within the relevant app/api/ route or component/panels/ directory.
+   187→   187→Error Handling
+   188→   188→Never throw raw exceptions from service functions. Return a Result<T, E> type that explicitly represents success or failure. Use discriminated unions for error classification. All errors are logged with structured context before being returned to callers.
+   189→   189→Type Safety
+   190→   190→Strict TypeScript with no implicit any. Use the 'unknown' type over 'any' when the type is truly not known at design time. All API request/response bodies have defined TypeScript interfaces. Zod schemas provide runtime validation that mirrors compile-time types.
+   191→   191→API Design
+   192→   192→All endpoints are versioned under /api/v1/. Responses follow a consistent envelope format with data and meta fields. Error responses include machine-readable codes for programmatic handling. Pagination is cursor-based for large collections and offset-based for simple lists.
+   193→   193→Testing Requirements
+   194→   194→Unit tests for all domain services and utility functions. Integration tests for API routes and database operations. End-to-end tests for critical user workflows (resume upload, job search, application submission). Minimum 80% code coverage for domain and service layers.
+   195→   195→Git Workflow
+   196→   196→Conventional commits (feat:, fix:, chore:, docs:). Feature branches from main. Pull requests require at least one approval. Squash commits on merge to main. Protected branches for main and release branches. Semantic versioning derived from commit history.
+   197→   197→Documentation
+   198→   198→JSDoc on all public APIs, functions, and interfaces. README.md in each major directory describing purpose and usage. Architecture Decision Records (ADRs) for significant design choices. Inline comments for complex business logic only; the code should be self-documenting.
+   199→   199→Security Practices
+   200→   200→No secrets in code or committed configuration files. All sensitive values loaded from environment variables via .env files (never committed). Dependency audits run in CI. No eval() or innerHTML usage. Content Security Policy headers enforced in production.
+   201→   201→
+   202→   202→Startup Configuration (Appendix)
+   203→   203→This appendix documents the environment variables, startup sequence, and key configuration options required to run the YoungSharkJobHunter system. Configuration follows the twelve-factor app methodology, with all environment-specific values externalized.
+   204→   204→Environment Variables
+   205→   205→The following environment variables must be configured before starting the application. Variables marked as required will cause the application to fail on startup if not set.
+   206→   206→
+   207→   207→Startup Sequence
+   208→   208→On startup, the application follows this initialization sequence: (1) Load and validate environment variables, (2) Initialize Prisma client and run database migrations, (3) Connect to Redis and verify connectivity, (4) Initialize Qdrant client and ensure required collections exist, (5) Register all job source connectors in the ConnectorRegistry, (6) Start the event bus and subscribe domain event handlers, (7) Initialize the scraping scheduler with configured cron, (8) Start the HTTP server and begin accepting requests.
+   209→   209→Key Configuration Options
+   210→   210→Rate limits, feature flags, and connector-specific settings are managed through a configuration service that reads from environment variables with optional database overrides. Feature flags enable gradual rollout of new capabilities. Connector configurations (rate limits, timeouts, authentication credentials) are stored per-source and can be updated at runtime through the admin console without requiring a service restart.
+   211→   211→Module | Layer | Responsibility | Key Interfaces | Tech Stack
+   212→   212→Job Discovery Service | Application | Discovers and normalizes jobs from external sources | JobSourceConnector, JobNormalizer, JobRepository | Python/Rust worker
+   213→   213→Company Discovery Service | Application | Discovers companies and their career pages | CompanyScraper, CompanyRepository | Python worker
+   214→   214→Resume Engine | Application | Parses resumes, generates tailored versions | ResumeParser, ResumeGenerator, TemplateEngine | TypeScript
+   215→   215→AI Matching Engine | Domain | Calculates job-fit scores using embeddings | MatchingService, EmbeddingService, ScoreCalculator | Python, sentence-transformers, Qdrant
+   216→   216→Cover Letter Agent | Application | Generates tailored cover letters | CoverLetterAgent, PromptTemplate | Python, LLM API
+   217→   217→ATS Optimizer | Domain | Analyzes JDs for ATS compatibility | ATSAnalyzer, KeywordExtractor | Python
+   218→   218→Application Workflow | Application | Manages application state machine | ApplicationStateMachine, StateRepository | TypeScript
+   219→   219→Interview Tracker | Application | Tracks interview rounds and feedback | InterviewService, SchedulerService | TypeScript
+   220→   220→Skill Ontology Service | Domain | Maps and manages skill relationships | SkillGraph, OntologyMapper | TypeScript, Neo4j
+   221→   221→Salary Intelligence | Domain | Aggregates and analyzes compensation data | SalaryAnalyzer, CompensationDB | TypeScript, PostgreSQL
+   222→   222→Notification Service | Infrastructure | Push notifications across channels | NotificationWorker, EmailSender, PushRegistry | TypeScript
+   223→   223→Scraper Orchestrator | Infrastructure | Schedules and manages scraping jobs | ScrapingScheduler, RateLimiter | TypeScript, BullMQ/Redis
+   224→   224→AI Assistant Agent | Application | Natural language career assistant | ChatHandler, ContextManager, ToolRegistry | TypeScript, LLM API
+   225→   225→Learning Recommendations | Domain | Identifies skill gaps and recommends resources | GapAnalyzer, ResourceRegistry | Python
+   226→   226→Admin Console | Presentation | System administration and monitoring | AdminDashboard, UserManagement, SourceManagement | TypeScript
+   227→   227→Recruiter CRM | Application | Recruiter relationship management | RecruiterService, ContactRepository | TypeScript
+   228→   228→Search & Discovery | Infrastructure | Semantic and keyword search | SearchService, VectorIndex, QueryParser | TypeScript, Qdrant, Meilisearch
+   229→   229→---TABLE END---
+   230→   230→Entity | Description | Key Fields | Relationships
+   231→   231→User | Platform user with authentication | email, name, role, preferences, subscription | has many Applications, owns Resumes
+   232→   232→Resume | Structured career profile data | fileName, skills[], experience[], education[], projects[] | has many Versions, belongs to User
+   233→   233→ResumeVersion | Generated resume variant for a job | resumeId, jobId, version, atsScore | belongs to Resume
+   234→   234→Job | Normalized job posting | title, company, description, skills[], salaryMin, salaryMax, location, remote, matchScore, source, sourceUrl | has many Applications, belongs to Company
+   235→   235→Company | Employer organization | name, website, industry, size, careersUrl | has many Jobs
+   236→   236→JobSource | Job discovery source | name, type, website, isActive, jobsCount | discovers Jobs
+   237→   237→Application | Job application record | status, atsScore, coverLetter, appliedAt, feedback | belongs to User and Job
+   238→   238→Interview | Interview round record | round, type, date, status, feedback | belongs to Application
+   239→   239→Skill | Skill in the ontology | name, category, relatedSkills[] | referenced by Jobs and Resumes
+   240→   240→ScrapingLog | Source scraping audit trail | source, status, jobsFound, jobsNew, errors | created by scraping
+   241→   241→Notification | User notification | type, message, read, userId | sent to User
+   242→   242→---TABLE END---
+   243→   243→Context | Core Domain Services | External Adapters | Notes
+   244→   244→JobDiscoveryContext | JobSourceConnector, JobNormalizer, JobRepository | GreenhouseAdapter, LeverAdapter, RemoteOKAdapter | Each source = separate bounded context
+   245→   245→CompanyDiscoveryContext | CompanyScraper, CompanyRepository | CrunchbaseAdapter, YC Portfolio | Event-driven company discovery
+   246→   246→ResumeEngineContext | ResumeParser, ResumeGenerator, TemplateEngine | LLM API Adapter | Pure domain logic
+   247→   247→MatchingContext | MatchingService, EmbeddingService, ScoreCalculator | QdrantClient, SentenceTransformers | Independent matching logic
+   248→   248→ApplicationWorkflowContext | ApplicationStateMachine, StateRepository | EmailAdapter | State machine per application
+   249→   249→InterviewContext | InterviewService, SchedulerService | CalendarAdapter | Scheduled interview reminders
+   250→   250→SkillOntologyContext | SkillGraph, OntologyMapper | OpenAI Embeddings | Graph-based skill mapping
+   251→   251→SalaryContext | SalaryAnalyzer, CompensationDB | External Salary APIs | Aggregated market data
+   252→   252→---TABLE END---
+   253→   253→Event Name | Domain Context | Payload | Consumers | Description
+   254→   254→job.discovered | JobDiscovery | { sourceId, jobId, normalizedJob } | MatchingContext, SalaryContext | New job found and normalized
+   255→   255→job.match_score_calculated | Matching | { jobId, score, breakdown } | ApplicationWorkflowContext | Job scored for a user
+   256→   256→resume.parsed | ResumeEngine | { resumeId, parsedData } | MatchingContext | Resume extracted into structured data
+   257→   257→resume.generated | ResumeEngine | { resumeId, jobId, atsScore } | ApplicationWorkflowContext | Tailored resume created
+   258→   258→cover_letter.generated | ResumeEngine | { resumeId, jobId, content } | ApplicationWorkflowContext | Cover letter ready
+   259→   259→application.started | ApplicationWorkflow | { applicationId, jobId } | Notification Service | Application submitted
+   260→   260→application.status_changed | ApplicationWorkflow | { applicationId, oldStatus, newStatus } | Notification Service, InterviewContext | Status pipeline updated
+   261→   261→interview.scheduled | Interview | { applicationId, round, date } | InterviewContext, Notification | Interview reminder set
+   262→   262→skill_gap.detected | Learning | { skills[], jobId } | Learning Recommendations | Skill gap identified
+   263→   263→scraping.completed | Infrastructure | { source, jobsFound, jobsNew, errors } | Dashboard | Scraping run finished
+   264→   264→---TABLE END---
+   265→   265→Method | Endpoint | Description | Auth | Request Body | Response
+   266→   266→GET | /api/v1/jobs | List/search jobs | Yes | Query: search, sourceType, remote, minSalary, maxSalary, minMatch, sortBy, page, limit | Paginated job list
+   267→   267→GET | /api/v1/jobs/:id | Get job details | Yes | — | Job object
+   268→   268→GET | /api/v1/sources | List job sources | Yes | — | Source list
+   269→   269→POST | /api/v1/scrape | Trigger scraping | Admin | { sourceId?, force?: boolean } | Scraping task ID
+   270→   270→GET | /api/v1/resumes | Get user resumes | Yes | — | Resume list
+   271→   271→POST | /api/v1/resumes/upload | Upload resume | Yes | multipart/form-data (file) | Resume object
+   272→   272→POST | /api/v1/resumes/:id/generate | Generate tailored resume | Yes | { jobId, options? } | Generated resume URL
+   273→   273→GET | /api/v1/applications | List applications | Yes | Query: status | Paginated application list
+   274→   274→POST | /api/v1/applications/:id/submit | Submit application | Yes | { coverLetter?, resumeId? } | Updated application
+   275→   275→GET | /api/v1/applications/:id | Get application details | Yes | — | Application object
+   276→   276→PATCH | /api/v1/applications/:id/status | Update status | Yes | { status, feedback? } | Updated application
+   277→   277→POST | /api/v1/chat | AI assistant chat | Yes | { message, context? } | AI response
+   278→   278→GET | /api/v1/dashboard/stats | Dashboard statistics | Yes | — | Stats object
+   279→   279→GET | /api/v1/skills | Skill ontology | Yes | Query: search, category | Skill list
+   280→   280→GET | /api/v1/market/salary | Salary intelligence | Yes | Query: role, location, level | Salary data
+   281→   281→GET/PUT | /api/v1/user/profile | User career profile | Yes | Profile fields | Profile object
+   282→   282→GET | /api/v1/admin/sources | Admin: manage sources | Admin | — | Source management data
+   283→   283→GET | /api/v1/admin/audit-log | Admin: audit trail | Admin | Query: userId, action, from, to | Audit log entries
+   284→   284→---TABLE END---
+   285→   285→Agent | Type | Input | Output / Model | Description
+   286→   286→Discovery Agent | Background Worker | New job events, enriched job data | None — Periodically scans sources, publishes events | Scans configured sources on a schedule and publishes job.discovered events to the event bus
+   287→   287→Resume Agent | Request-Response | Job description, user resume data | GPT-4 / claude-3.5-sonnet | Generates tailored resumes and cover letters optimized for specific job descriptions
+   288→   288→ATS Agent | Request-Response | Job description | GPT-4 / claude-3.5-sonnet | Analyzes job descriptions and provides keyword optimization recommendations for ATS compatibility
+   289→   289→Interview Agent | Request-Response | Interview context, user profile | GPT-4 / claude-3.5-sonnet | Prepares interview materials including potential questions, talking points, and company research
+   290→   290→Learning Agent | Request-Response | User skills, job requirements | GPT-4 / claude-3.5-sonnet | Identifies skill gaps between a user's profile and job requirements, then recommends learning resources
+   291→   291→Market Intelligence Agent | Scheduled | Salary trends, demand signals | Fine-tuned model | Analyzes job market conditions, tracks salary trends, and identifies emerging demand for skills
+   292→   292→Career Coach Agent | Request-Response | Career profile, market data | GPT-4o / claude-3.5-sonnet | Synthesizes data from all agents to provide holistic career strategy and actionable advice
+   293→   293→---TABLE END---
+   294→   294→Category | Examples | Connector Count | Priority
+   295→   295→ATS Platforms | Greenhouse, Lever, Ashby, Workday, SmartRecruiters, iCIMS | 6 | High
+   296→   296→AI Training | Outlier, Scale AI, DataAnnotation, Alignerr, Remotasks, Appen, etc. | 7+ | High
+   297→   297→Research Labs | OpenAI, Anthropic, DeepMind, xAI, Cohere, Mistral, Hugging Face | 7 | High
+   298→   298→Remote Boards | RemoteOK, We Work Remotely, FlexJobs, Himalayas | 4 | Medium
+   299→   299→Job Boards | LinkedIn, Indeed, Glassdoor, Wellfound | 4 | Medium
+   300→   300→Startup | YC Jobs, Otta, F6S | 3 | Medium
+   301→   301→General | RSS feeds, Hacker News, Reddit | 3 | Low
+   302→   302→---TABLE END---
+   303→   303→Phase | Focus | Targets | Timeline
+   304→   304→Phase 1 | Core Engine | 20 sources, resume gen, AI matching, 10K jobs indexed | Months 1-3
+   305→   305→Phase 2 | Discovery Scale | 55+ sources, 100K jobs, salary intelligence, skill ontology | Months 3-5
+   306→   306→Phase 3 | Scale & Performance | 1M+ jobs, sub-second search, distributed workers | Months 6-9
+   307→   307→Phase 4 | Intelligence | Learning feedback loop, auto-apply workflow, recruiter CRM | Months 9-12
+   308→   308→Phase 5 | Platform | Multi-tenant, API marketplace, mobile SDK | Months 12-18
+   309→   309→---TABLE END---
+   310→   310→Sprint # | Focus | Key Deliverables | Story Points
+   311→   311→Sprint 1 | Foundation & Setup | Project scaffolding, Prisma schema, Docker Compose, CI/CD pipeline, base UI shell | 34
+   312→   312→Sprint 2 | Job Discovery Core | Greenhouse & Lever connectors, connector registry, job normalization, scraping scheduler | 40
+   313→   313→Sprint 3 | Resume Engine | Resume upload & parsing, PDF extraction, structured data model, resume storage | 38
+   314→   314→Sprint 4 | AI Matching | Embedding service integration, Qdrant setup, match score calculation, job ranking | 42
+   315→   315→Sprint 5 | Application Workflow | Application state machine, status tracking, application CRUD, dashboard stats | 36
+   316→   316→Sprint 6 | Resume Generation | LLM integration for resume tailoring, ATS scoring, template engine, version management | 44
+   317→   317→Sprint 7 | Source Expansion | Ashby, RemoteOK, LinkedIn connectors, 55+ source support, source health monitoring | 40
+   318→   318→Sprint 8 | Cover Letter & ATS | Cover letter generation agent, ATS keyword optimization, JD analysis, optimization tips | 38
+   319→   319→Sprint 9 | AI Assistant | Chat interface, context management, tool registry, career coach agent integration | 42
+   320→   320→Sprint 10 | Intelligence Layer | Salary intelligence, skill ontology, learning recommendations, skill gap detection | 44
+   321→   321→Sprint 11 | Scale & Polish | Distributed workers, search optimization, notification service, interview tracker | 40
+   322→   322→Sprint 12 | Production Readiness | Security hardening, monitoring, admin console, recruiter CRM, performance tuning | 46
+   323→   323→---TABLE END---
+   324→   324→Variable | Required | Description | Default
+   325→   325→DATABASE_URL | Yes | PostgreSQL connection string | —
+   326→   326→REDIS_URL | Yes | Redis connection URL | redis://localhost:6379
+   327→   327→QDRANT_URL | Yes | Qdrant vector DB URL | http://localhost:6333
+   328→   328→S3_ENDPOINT | Yes | S3-compatible storage endpoint | —
+   329→   329→S3_ACCESS_KEY | Yes | S3 access key | —
+   330→   330→S3_SECRET_KEY | Yes | S3 secret key | —
+   331→   331→S3_BUCKET | Yes | S3 bucket name | —
+   332→   332→JWT_SECRET | Yes | JWT signing secret | —
+   333→   333→JWT_EXPIRY | No | Access token expiry (minutes) | 15
+   334→   334→OPENAI_API_KEY | No | OpenAI API key for AI features | —
+   335→   335→ANTHROPIC_API_KEY | No | Anthropic API key for AI features | —
+   336→   336→NODE_ENV | No | Application environment | development
+   337→   337→PORT | No | Application listen port | 3000
+   338→   338→CORS_ORIGINS | No | Comma-separated allowed origins | http://localhost:3000
+   339→   339→SCRAPING_CRON | No | Cron expression for scraping schedule | 0 */6 * * *
+   340→   340→---TABLE END---

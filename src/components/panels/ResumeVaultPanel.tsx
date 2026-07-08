@@ -15,13 +15,11 @@ import {
   Award,
   Languages,
   Calendar,
-  MapPin,
   Download,
   FileText,
   Clock,
+  Loader2,
 } from 'lucide-react';
-import type { ParsedResume, WorkExperience, Education, Project } from '@/lib/types';
-
 import {
   Card,
   CardContent,
@@ -39,18 +37,81 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
-/* -------------------------------------------------------------------------- */
-/*  Skill category helper                                                     */
-/* -------------------------------------------------------------------------- */
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface ResumeData {
+  id: string;
+  fileName: string;
+  parsedData: ParsedResume;
+  skills: string[];
+  experience: WorkExperience[];
+  education: Education[];
+  projects: Project[];
+  certifications: string[];
+  languages: string[];
+}
+
+interface ResumeVersion {
+  id: string;
+  fileName: string;
+  createdAt: string;
+  description: string;
+}
+
+interface ParsedResume {
+  name: string;
+  email: string;
+  phone?: string;
+  linkedin?: string;
+  github?: string;
+  website?: string;
+  summary: string;
+  experience: WorkExperience[];
+  education: Education[];
+  projects: Project[];
+  certifications: string[];
+  languages: string[];
+  skills: string[];
+}
+
+interface WorkExperience {
+  company: string;
+  title: string;
+  startDate: string;
+  endDate?: string;
+  current: boolean;
+  description: string;
+  technologies: string[];
+}
+
+interface Education {
+  institution: string;
+  degree: string;
+  field: string;
+  startDate: string;
+  endDate?: string;
+  gpa?: string;
+}
+
+interface Project {
+  name: string;
+  description: string;
+  technologies: string[];
+  url?: string;
+  startDate?: string;
+}
+
+// ─── Skill Category Helper ─────────────────────────────────────────────────────
 
 const SKILL_CATEGORIES: Record<string, string[]> = {
-  'Languages': ['Python', 'JavaScript', 'TypeScript'],
-  'ML / AI': ['PyTorch', 'TensorFlow', 'Hugging Face', 'OpenAI API', 'Prompt Engineering', 'RLHF', 'NLP', 'Transformer Models'],
-  'Frameworks': ['React', 'Node.js', 'LangChain', 'FastAPI'],
-  'Databases & Infra': ['PostgreSQL', 'Redis', 'Docker', 'Git', 'AWS', 'GCP'],
+  'Languages': ['Python', 'JavaScript', 'TypeScript', 'Java', 'C++', 'Go', 'Rust', 'SQL'],
+  'ML / AI': ['PyTorch', 'TensorFlow', 'Hugging Face', 'OpenAI API', 'Prompt Engineering', 'RLHF', 'NLP', 'Transformer Models', 'scikit-learn', 'Keras'],
+  'Frameworks': ['React', 'Next.js', 'Node.js', 'Express', 'Django', 'FastAPI', 'Flask', 'LangChain', 'Vue.js', 'Angular'],
+  'Databases & Infra': ['PostgreSQL', 'MySQL', 'Redis', 'MongoDB', 'Docker', 'Kubernetes', 'Git', 'AWS', 'GCP', 'Azure', 'Terraform'],
+  'Tools & Testing': ['Jest', 'Cypress', 'Selenium', 'CI/CD', 'Webpack', 'Vite', 'ESLint'],
 };
 
-function categorizeSkills(skills: string[]) {
+function categorizeSkills(skills: string[]): Record<string, string[]> {
   const categorized: Record<string, string[]> = {};
   const uncategorized: string[] = [];
 
@@ -74,25 +135,21 @@ function categorizeSkills(skills: string[]) {
   return categorized;
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Date formatting helper                                                    */
-/* -------------------------------------------------------------------------- */
+// ─── Date formatting helper ────────────────────────────────────────────────────
 
 function formatDate(date?: string, end?: string, current?: boolean): string {
-  const startStr = date ? new Date(date + '-01').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '';
-  if (current) return `${startStr} - Present`;
+  if (!date) return '';
+  const startStr = new Date(date + '-01').toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  if (current) return `${startStr} – Present`;
   const endStr = end ? new Date(end + '-01').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '';
-  return `${startStr} - ${endStr}`;
+  return endStr ? `${startStr} – ${endStr}` : startStr;
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Skeleton loader                                                           */
-/* -------------------------------------------------------------------------- */
+// ─── Skeleton loader ───────────────────────────────────────────────────────────
 
 function ResumeSkeleton() {
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      {/* Header skeleton */}
+    <div className="space-y-6">
       <div className="space-y-3">
         <Skeleton className="h-8 w-64" />
         <div className="flex flex-wrap gap-3">
@@ -102,7 +159,6 @@ function ResumeSkeleton() {
         </div>
       </div>
       <Separator />
-      {/* Summary skeleton */}
       <Card>
         <CardContent className="p-4">
           <Skeleton className="h-5 w-20 mb-3" />
@@ -111,7 +167,6 @@ function ResumeSkeleton() {
           <Skeleton className="h-4 w-4/6 mt-2" />
         </CardContent>
       </Card>
-      {/* Skills skeleton */}
       <div className="space-y-3">
         <Skeleton className="h-5 w-20" />
         <div className="flex flex-wrap gap-2">
@@ -120,7 +175,6 @@ function ResumeSkeleton() {
           ))}
         </div>
       </div>
-      {/* Experience skeleton */}
       <div className="space-y-3">
         <Skeleton className="h-5 w-32" />
         {Array.from({ length: 3 }).map((_, i) => (
@@ -134,7 +188,6 @@ function ResumeSkeleton() {
           </Card>
         ))}
       </div>
-      {/* Education skeleton */}
       <div className="space-y-3">
         <Skeleton className="h-5 w-28" />
         {Array.from({ length: 2 }).map((_, i) => (
@@ -150,14 +203,12 @@ function ResumeSkeleton() {
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Sub-components                                                            */
-/* -------------------------------------------------------------------------- */
+// ─── Sub-components ────────────────────────────────────────────────────────────
 
 function ContactLink({ icon: Icon, href, label }: { icon: React.ElementType; href: string; label: string }) {
   return (
     <a
-      href={href.startsWith('http') ? href : `https://${href}`}
+      href={href.startsWith('http') || href.startsWith('mailto:') || href.startsWith('tel:') ? href : `https://${href}`}
       target="_blank"
       rel="noopener noreferrer"
       className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
@@ -168,10 +219,9 @@ function ContactLink({ icon: Icon, href, label }: { icon: React.ElementType; hre
   );
 }
 
-function ExperienceCard({ exp, index }: { exp: WorkExperience; index: number }) {
+function ExperienceCard({ exp }: { exp: WorkExperience }) {
   return (
     <Card className="relative overflow-hidden">
-      {/* Timeline dot */}
       <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary" />
       <CardContent className="p-4 pl-6">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-1 mb-2">
@@ -233,7 +283,7 @@ function ProjectCard({ project }: { project: Project }) {
           </h4>
           {project.url && (
             <a
-              href={`https://${project.url}`}
+              href={project.url.startsWith('http') ? project.url : `https://${project.url}`}
               target="_blank"
               rel="noopener noreferrer"
               className="text-xs text-primary hover:underline shrink-0"
@@ -255,61 +305,81 @@ function ProjectCard({ project }: { project: Project }) {
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Resume Versions                                                           */
-/* -------------------------------------------------------------------------- */
-
-const RESUME_VERSIONS = [
-  {
-    label: 'Resume v1 (Original)',
-    date: 'Jun 15, 2025',
-    description: 'Original uploaded resume',
-  },
-  {
-    label: 'Resume v2 (Optimized for Outlier)',
-    date: 'Jul 7, 2026',
-    description: 'Tailored for AI training roles',
-  },
-  {
-    label: 'Resume v3 (Optimized for Scale AI)',
-    date: 'Jul 5, 2026',
-    description: 'Tailored for prompt engineering roles',
-  },
-];
-
-/* -------------------------------------------------------------------------- */
-/*  Main component                                                            */
-/* -------------------------------------------------------------------------- */
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function ResumeVaultPanel() {
-  const [resume, setResume] = useState<ParsedResume | null>(null);
+  const [resume, setResume] = useState<ResumeData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [versions, setVersions] = useState<ResumeVersion[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   /* ---- Fetch resume data ---- */
+  const fetchResume = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/resume');
+      if (res.ok) {
+        const data: ResumeData = await res.json();
+        setResume(data);
+      } else {
+        setResume(null);
+      }
+    } catch {
+      setResume(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    async function fetchResume() {
+    fetchResume();
+  }, [fetchResume]);
+
+  /* ---- Upload file ---- */
+  const uploadFile = useCallback(
+    async (file: File) => {
+      const validTypes = [
+        'application/pdf',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      ];
+      const validExts = ['.pdf', '.docx'];
+      const ext = '.' + file.name.split('.').pop()?.toLowerCase();
+      if (!validTypes.includes(file.type) && !validExts.includes(ext)) {
+        toast.error('Invalid file type. Please upload PDF or DOCX.');
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error('File too large. Maximum size is 10MB.');
+        return;
+      }
+
+      setUploading(true);
       try {
-        const res = await fetch('/api/resume');
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetch('/api/resume', {
+          method: 'POST',
+          body: formData,
+        });
         if (res.ok) {
-          const data = await res.json();
-          setResume(data.resume.parsedData);
+          toast.success('Resume uploaded and parsed successfully!');
+          fetchResume();
+        } else {
+          const errData = await res.json().catch(() => null);
+          toast.error(errData?.error ?? 'Failed to upload resume.');
         }
       } catch {
-        toast.error('Failed to load resume data');
+        toast.error('Failed to upload resume.');
       } finally {
-        setLoading(false);
+        setUploading(false);
       }
-    }
-    fetchResume();
-  }, []);
+    },
+    [fetchResume],
+  );
 
-  /* ---- Upload handlers ---- */
-  const handleFiles = useCallback(() => {
-    toast.success('Resume uploaded and parsed successfully');
-  }, []);
-
+  /* ---- Drag & Drop handlers ---- */
   const handleDragOver = useCallback((e: DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -327,20 +397,29 @@ export default function ResumeVaultPanel() {
       e.preventDefault();
       e.stopPropagation();
       setIsDragOver(false);
-      handleFiles();
+      const file = e.dataTransfer.files[0];
+      if (file) uploadFile(file);
     },
-    [handleFiles],
+    [uploadFile],
   );
 
   const handleUploadClick = useCallback(() => {
     fileInputRef.current?.click();
   }, []);
 
-  const handleFileChange = useCallback(() => {
-    handleFiles();
-  }, [handleFiles]);
+  const handleFileChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) uploadFile(file);
+      // Reset input so the same file can be re-uploaded
+      e.target.value = '';
+    },
+    [uploadFile],
+  );
 
   /* ---- Render ---- */
+  const parsedData = resume?.parsedData;
+
   return (
     <div className="space-y-6">
       {/* Upload Section */}
@@ -364,20 +443,29 @@ export default function ResumeVaultPanel() {
                   ? 'border-primary bg-primary/5'
                   : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50'
               }
+              ${uploading ? 'pointer-events-none opacity-60' : ''}
             `}
           >
-            <div
-              className={`rounded-full p-3 transition-colors ${
-                isDragOver ? 'bg-primary/10' : 'bg-muted'
-              }`}
-            >
-              <FileUp className={`h-6 w-6 ${isDragOver ? 'text-primary' : 'text-muted-foreground'}`} />
-            </div>
+            {uploading ? (
+              <Loader2 className="h-6 w-6 text-primary animate-spin" />
+            ) : (
+              <div
+                className={`rounded-full p-3 transition-colors ${
+                  isDragOver ? 'bg-primary/10' : 'bg-muted'
+                }`}
+              >
+                <FileUp className={`h-6 w-6 ${isDragOver ? 'text-primary' : 'text-muted-foreground'}`} />
+              </div>
+            )}
             <div className="text-center">
               <p className="text-sm font-medium">
-                {isDragOver ? 'Drop your resume here' : 'Drop your resume here or click to upload'}
+                {uploading
+                  ? 'Uploading…'
+                  : isDragOver
+                    ? 'Drop your resume here'
+                    : 'Drop your resume here or click to upload'}
               </p>
-              <p className="text-xs text-muted-foreground mt-1">Supported formats: PDF, DOCX</p>
+              <p className="text-xs text-muted-foreground mt-1">Supported formats: PDF, DOCX (max 10MB)</p>
             </div>
             <input
               ref={fileInputRef}
@@ -394,26 +482,45 @@ export default function ResumeVaultPanel() {
       {/* Parsed Resume Display */}
       {loading ? (
         <ResumeSkeleton />
-      ) : resume ? (
-        <div className="space-y-6 animate-in fade-in duration-500">
+      ) : parsedData ? (
+        <div className="space-y-6">
           {/* Header */}
           <section>
-            <h2 className="text-2xl font-bold tracking-tight">{resume.name}</h2>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-2">
-              {resume.email && (
-                <ContactLink icon={Mail} href={`mailto:${resume.email}`} label={resume.email} />
-              )}
-              {resume.phone && (
-                <ContactLink icon={Phone} href={`tel:${resume.phone}`} label={resume.phone} />
-              )}
-              {resume.linkedin && (
-                <ContactLink icon={Linkedin} href={resume.linkedin} label={resume.linkedin} />
-              )}
-              {resume.github && (
-                <ContactLink icon={Github} href={resume.github} label={resume.github} />
-              )}
-              {resume.website && (
-                <ContactLink icon={Globe} href={resume.website} label={resume.website} />
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-2xl font-bold tracking-tight">{parsedData.name}</h2>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-2">
+                  {parsedData.email && (
+                    <ContactLink icon={Mail} href={`mailto:${parsedData.email}`} label={parsedData.email} />
+                  )}
+                  {parsedData.phone && (
+                    <ContactLink icon={Phone} href={`tel:${parsedData.phone}`} label={parsedData.phone} />
+                  )}
+                  {parsedData.linkedin && (
+                    <ContactLink icon={Linkedin} href={parsedData.linkedin} label="LinkedIn" />
+                  )}
+                  {parsedData.github && (
+                    <ContactLink icon={Github} href={parsedData.github} label="GitHub" />
+                  )}
+                  {parsedData.website && (
+                    <ContactLink icon={Globe} href={parsedData.website} label="Website" />
+                  )}
+                </div>
+              </div>
+              {resume?.id && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="outline" size="sm" className="shrink-0" asChild>
+                        <a href={`/api/resume/${resume.id}`} download>
+                          <Download className="h-4 w-4 mr-1.5" />
+                          Download
+                        </a>
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Download resume file</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               )}
             </div>
           </section>
@@ -426,7 +533,7 @@ export default function ResumeVaultPanel() {
               <CardTitle className="text-base font-semibold">Professional Summary</CardTitle>
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              <p className="text-sm text-muted-foreground leading-relaxed">{resume.summary}</p>
+              <p className="text-sm text-muted-foreground leading-relaxed">{parsedData.summary}</p>
             </CardContent>
           </Card>
 
@@ -437,7 +544,7 @@ export default function ResumeVaultPanel() {
               Skills
             </h3>
             <div className="space-y-3">
-              {Object.entries(categorizeSkills(resume.skills)).map(([category, skills]) => (
+              {Object.entries(categorizeSkills(parsedData.skills)).map(([category, skills]) => (
                 <div key={category}>
                   <p className="text-xs font-medium text-muted-foreground mb-1.5 uppercase tracking-wider">
                     {category}
@@ -463,8 +570,8 @@ export default function ResumeVaultPanel() {
               Experience
             </h3>
             <div className="space-y-3">
-              {resume.experience.map((exp, i) => (
-                <ExperienceCard key={`${exp.company}-${i}`} exp={exp} index={i} />
+              {parsedData.experience.map((exp, i) => (
+                <ExperienceCard key={`${exp.company}-${i}`} exp={exp} />
               ))}
             </div>
           </section>
@@ -478,7 +585,7 @@ export default function ResumeVaultPanel() {
               Education
             </h3>
             <div className="space-y-3">
-              {resume.education.map((edu, i) => (
+              {parsedData.education.map((edu, i) => (
                 <EducationCard key={`${edu.institution}-${i}`} edu={edu} />
               ))}
             </div>
@@ -487,54 +594,60 @@ export default function ResumeVaultPanel() {
           <Separator />
 
           {/* Projects */}
-          <section>
-            <h3 className="text-base font-semibold mb-3 flex items-center gap-2">
-              <Code className="h-4 w-4" />
-              Projects
-            </h3>
-            <div className="space-y-3">
-              {resume.projects.map((project) => (
-                <ProjectCard key={project.name} project={project} />
-              ))}
-            </div>
-          </section>
+          {parsedData.projects.length > 0 && (
+            <section>
+              <h3 className="text-base font-semibold mb-3 flex items-center gap-2">
+                <Code className="h-4 w-4" />
+                Projects
+              </h3>
+              <div className="space-y-3">
+                {parsedData.projects.map((project) => (
+                  <ProjectCard key={project.name} project={project} />
+                ))}
+              </div>
+            </section>
+          )}
 
-          <Separator />
+          {parsedData.projects.length > 0 && <Separator />}
 
           {/* Certifications */}
-          <section>
-            <h3 className="text-base font-semibold mb-3 flex items-center gap-2">
-              <Award className="h-4 w-4" />
-              Certifications
-            </h3>
-            <Card>
-              <CardContent className="p-4">
-                <ul className="space-y-2">
-                  {resume.certifications.map((cert) => (
-                    <li key={cert} className="flex items-start gap-2 text-sm">
-                      <Award className="h-4 w-4 text-primary mt-0.5 shrink-0" />
-                      <span>{cert}</span>
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          </section>
+          {parsedData.certifications.length > 0 && (
+            <section>
+              <h3 className="text-base font-semibold mb-3 flex items-center gap-2">
+                <Award className="h-4 w-4" />
+                Certifications
+              </h3>
+              <Card>
+                <CardContent className="p-4">
+                  <ul className="space-y-2">
+                    {parsedData.certifications.map((cert) => (
+                      <li key={cert} className="flex items-start gap-2 text-sm">
+                        <Award className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                        <span>{cert}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            </section>
+          )}
 
           {/* Languages */}
-          <section>
-            <h3 className="text-base font-semibold mb-3 flex items-center gap-2">
-              <Languages className="h-4 w-4" />
-              Languages
-            </h3>
-            <div className="flex flex-wrap gap-2">
-              {resume.languages.map((lang) => (
-                <Badge key={lang} variant="outline" className="text-sm">
-                  {lang}
-                </Badge>
-              ))}
-            </div>
-          </section>
+          {parsedData.languages.length > 0 && (
+            <section>
+              <h3 className="text-base font-semibold mb-3 flex items-center gap-2">
+                <Languages className="h-4 w-4" />
+                Languages
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {parsedData.languages.map((lang) => (
+                  <Badge key={lang} variant="outline" className="text-sm">
+                    {lang}
+                  </Badge>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       ) : (
         <Card>
@@ -554,31 +667,45 @@ export default function ResumeVaultPanel() {
           </CardTitle>
         </CardHeader>
         <CardContent className="px-4 pb-4">
-          <div className="space-y-2">
-            {RESUME_VERSIONS.map((version) => (
-              <div
-                key={version.label}
-                className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium truncate">{version.label}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {version.date} &middot; {version.description}
-                  </p>
+          {versions.length === 0 ? (
+            <p className="text-xs text-muted-foreground py-4 text-center">
+              No version history yet. Upload new resumes to build history.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {versions.map((version) => (
+                <div
+                  key={version.id}
+                  className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{version.fileName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(version.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      {version.description && ` · ${version.description}`}
+                    </p>
+                  </div>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="shrink-0 h-8 w-8"
+                          asChild
+                        >
+                          <a href={`/api/resume/${version.id}`} download aria-label={`Download ${version.fileName}`}>
+                            <Download className="h-4 w-4" />
+                          </a>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Download</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon" className="shrink-0 h-8 w-8" aria-label={`Download ${version.label}`}>
-                        <Download className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Download</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

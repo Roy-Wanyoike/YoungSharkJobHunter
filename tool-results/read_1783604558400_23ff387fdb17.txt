@@ -1,0 +1,897 @@
+     1→     1→'use client';
+     2→     2→
+     3→     3→import { useState, useEffect, useCallback, useRef } from 'react';
+     4→     4→import {
+     5→     5→  Search,
+     6→     6→  MapPin,
+     7→     7→  DollarSign,
+     8→     8→  Clock,
+     9→     9→  Bookmark,
+    10→    10→  BookmarkCheck,
+    11→    11→  CheckCircle,
+    12→    12→  ExternalLink,
+    13→    13→  FileText,
+    14→    14→  RefreshCw,
+    15→    15→  Loader2,
+    16→    16→  X,
+    17→    17→  Info,
+    18→    18→  AlertTriangle,
+    19→    19→  CheckCircle2,
+    20→    20→  Briefcase,
+    21→    21→} from 'lucide-react';
+    22→    22→import { Card, CardContent } from '@/components/ui/card';
+    23→    23→import { Badge } from '@/components/ui/badge';
+    24→    24→import { Button } from '@/components/ui/button';
+    25→    25→import { Input } from '@/components/ui/input';
+    26→    26→import { Switch } from '@/components/ui/switch';
+    27→    27→import { Skeleton } from '@/components/ui/skeleton';
+    28→    28→import {
+    29→    29→  Select,
+    30→    30→  SelectTrigger,
+    31→    31→  SelectValue,
+    32→    32→  SelectContent,
+    33→    33→  SelectItem,
+    34→    34→} from '@/components/ui/select';
+    35→    35→import {
+    36→    36→  Dialog,
+    37→    37→  DialogContent,
+    38→    38→  DialogHeader,
+    39→    39→  DialogTitle,
+    40→    40→  DialogDescription,
+    41→    41→} from '@/components/ui/dialog';
+    42→    42→import { toast } from 'sonner';
+    43→    43→
+    44→    44→// ─── Types ────────────────────────────────────────────────────────────────────
+    45→    45→
+    46→    46→interface JobItem {
+    47→    47→  id: string;
+    48→    48→  title: string;
+    49→    49→  company: string;
+    50→    50→  source: string;
+    51→    51→  sourceType: string;
+    52→    52→  sourceUrl: string;
+    53→    53→  location: string | null;
+    54→    54→  remote: boolean;
+    55→    55→  salaryMin: number | null;
+    56→    56→  salaryMax: number | null;
+    57→    57→  salaryCurrency: string;
+    58→    58→  salaryType: string | null;
+    59→    59→  description: string;
+    60→    60→  requirements: string | null;
+    61→    61→  skills: string[];
+    62→    62→  experienceLevel: string | null;
+    63→    63→  jobType: string | null;
+    64→    64→  postedAt: string | null;
+    65→    65→  expiresAt: string | null;
+    66→    66→  matchScore: number | null;
+    67→    67→  isActive: boolean;
+    68→    68→  isApplied: boolean;
+    69→    69→  isSaved: boolean;
+    70→    70→  createdAt: string;
+    71→    71→  updatedAt: string;
+    72→    72→}
+    73→    73→
+    74→    74→interface JobsMeta {
+    75→    75→  page: number;
+    76→    76→  limit: number;
+    77→    77→  total: number;
+    78→    78→}
+    79→    79→
+    80→    80→interface ScrapeResultItem {
+    81→    81→  source: string;
+    82→    82→  status: string;
+    83→    83→  jobsFound: number;
+    84→    84→  jobsNew: number;
+    85→    85→  duration: number;
+    86→    86→}
+    87→    87→
+    88→    88→interface ScrapeResponseData {
+    89→    89→  status: string;
+    90→    90→  sourcesScraped: number;
+    91→    91→  totalJobsFound: number;
+    92→    92→  totalJobsNew: number;
+    93→    93→  results: ScrapeResultItem[];
+    94→    94→}
+    95→    95→
+    96→    96→// ─── Constants ────────────────────────────────────────────────────────────────
+    97→    97→
+    98→    98→const SOURCE_FILTER_OPTIONS = [
+    99→    99→  { value: 'all', label: 'All' },
+   100→   100→  { value: 'ai_training', label: 'AI Training' },
+   101→   101→  { value: 'research_lab', label: 'Research Lab' },
+   102→   102→  { value: 'big_tech', label: 'Big Tech' },
+   103→   103→  { value: 'job_board', label: 'Job Board' },
+   104→   104→  { value: 'remote', label: 'Remote' },
+   105→   105→  { value: 'ats', label: 'ATS' },
+   106→   106→  { value: 'startup', label: 'Startup' },
+   107→   107→  { value: 'freelance', label: 'Freelance' },
+   108→   108→];
+   109→   109→
+   110→   110→const SORT_OPTIONS = [
+   111→   111→  { value: 'matchScore_desc', label: 'Match Score' },
+   112→   112→  { value: 'salary_desc', label: 'Salary (High→Low)' },
+   113→   113→  { value: 'salary_asc', label: 'Salary (Low→High)' },
+   114→   114→  { value: 'date_desc', label: 'Date (Newest)' },
+   115→   115→  { value: 'date_asc', label: 'Date (Oldest)' },
+   116→   116→];
+   117→   117→
+   118→   118→const SOURCE_TYPE_BADGE: Record<string, string> = {
+   119→   119→  ai_training: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400',
+   120→   120→  research_lab: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-400',
+   121→   121→  big_tech: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400',
+   122→   122→  remote: 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-400',
+   123→   123→  ats: 'bg-slate-100 text-slate-600 dark:bg-slate-800/40 dark:text-slate-400',
+   124→   124→  startup: 'bg-pink-100 text-pink-700 dark:bg-pink-900/40 dark:text-pink-400',
+   125→   125→  job_board: 'bg-gray-100 text-gray-600 dark:bg-gray-800/40 dark:text-gray-400',
+   126→   126→  freelance: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400',
+   127→   127→};
+   128→   128→
+   129→   129→const SOURCE_TYPE_LABEL: Record<string, string> = {
+   130→   130→  ai_training: 'AI Training',
+   131→   131→  research_lab: 'Research',
+   132→   132→  big_tech: 'Big Tech',
+   133→   133→  remote: 'Remote',
+   134→   134→  startup: 'Startup',
+   135→   135→  job_board: 'Job Board',
+   136→   136→  ats: 'ATS',
+   137→   137→  freelance: 'Freelance',
+   138→   138→};
+   139→   139→
+   140→   140→// ─── Helpers ──────────────────────────────────────────────────────────────────
+   141→   141→
+   142→   142→function formatSalary(job: JobItem): string | null {
+   143→   143→  const { salaryMin, salaryMax, salaryType } = job;
+   144→   144→  if (!salaryMin && !salaryMax) return null;
+   145→   145→  const min = salaryMin ?? 0;
+   146→   146→  const max = salaryMax ?? 0;
+   147→   147→  const fmt = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}K` : String(n));
+   148→   148→  const suffix =
+   149→   149→    salaryType === 'hourly' ? '/hr' : salaryType === 'monthly' ? '/mo' : '/yr';
+   150→   150→  if (min && max && min !== max) return `$${fmt(min)}-${fmt(max)}${suffix}`;
+   151→   151→  return `$${fmt(max || min)}${suffix}`;
+   152→   152→}
+   153→   153→
+   154→   154→function relativeDate(dateStr: string | null | undefined): string {
+   155→   155→  if (!dateStr) return '';
+   156→   156→  const diff = Date.now() - new Date(dateStr).getTime();
+   157→   157→  const days = Math.floor(diff / 86400000);
+   158→   158→  if (days === 0) return 'Today';
+   159→   159→  if (days === 1) return 'Yesterday';
+   160→   160→  if (days < 7) return `${days} days ago`;
+   161→   161→  if (days < 30) return `${Math.floor(days / 7)}w ago`;
+   162→   162→  return `${Math.floor(days / 30)}mo ago`;
+   163→   163→}
+   164→   164→
+   165→   165→function matchScoreRingColor(score: number): string {
+   166→   166→  if (score >= 80) return 'text-emerald-500';
+   167→   167→  if (score >= 60) return 'text-amber-500';
+   168→   168→  return 'text-red-500';
+   169→   169→}
+   170→   170→
+   171→   171→function matchScoreTrackColor(score: number): string {
+   172→   172→  if (score >= 80) return 'stroke-emerald-500';
+   173→   173→  if (score >= 60) return 'stroke-amber-500';
+   174→   174→  return 'stroke-red-500';
+   175→   175→}
+   176→   176→
+   177→   177→function parseSortValue(value: string): { sortBy: string; sortOrder: string } {
+   178→   178→  const [sortBy, sortOrder] = value.split('_');
+   179→   179→  return { sortBy, sortOrder };
+   180→   180→}
+   181→   181→
+   182→   182→// ─── Match Score Ring ─────────────────────────────────────────────────────────
+   183→   183→
+   184→   184→function MatchScoreRing({ score }: { score: number }) {
+   185→   185→  const radius = 18;
+   186→   186→  const circumference = 2 * Math.PI * radius;
+   187→   187→  const offset = circumference - (score / 100) * circumference;
+   188→   188→  const colorClass = matchScoreRingColor(score);
+   189→   189→  const trackClass = matchScoreTrackColor(score);
+   190→   190→
+   191→   191→  return (
+   192→   192→    <div className="relative w-12 h-12 shrink-0">
+   193→   193→      <svg className="w-12 h-12 -rotate-90" viewBox="0 0 44 44">
+   194→   194→        <circle
+   195→   195→          cx="22"
+   196→   196→          cy="22"
+   197→   197→          r={radius}
+   198→   198→          fill="none"
+   199→   199→          strokeWidth="3"
+   200→   200→          className="stroke-muted"
+   201→   201→        />
+   202→   202→        <circle
+   203→   203→          cx="22"
+   204→   204→          cy="22"
+   205→   205→          r={radius}
+   206→   206→          fill="none"
+   207→   207→          strokeWidth="3"
+   208→   208→          strokeLinecap="round"
+   209→   209→          className={trackClass}
+   210→   210→          strokeDasharray={circumference}
+   211→   211→          strokeDashoffset={offset}
+   212→   212→          style={{ transition: 'stroke-dashoffset 0.6s ease' }}
+   213→   213→        />
+   214→   214→      </svg>
+   215→   215→      <span
+   216→   216→        className={`absolute inset-0 flex items-center justify-center text-[11px] font-bold ${colorClass}`}
+   217→   217→      >
+   218→   218→        {score}
+   219→   219→      </span>
+   220→   220→    </div>
+   221→   221→  );
+   222→   222→}
+   223→   223→
+   224→   224→// ─── Job Card Component ───────────────────────────────────────────────────────
+   225→   225→
+   226→   226→function JobCard({
+   227→   227→  job,
+   228→   228→  onViewDetails,
+   229→   229→  onToggleSave,
+   230→   230→}: {
+   231→   231→  job: JobItem;
+   232→   232→  onViewDetails: () => void;
+   233→   233→  onToggleSave: () => void;
+   234→   234→}) {
+   235→   235→  const salary = formatSalary(job);
+   236→   236→  const posted = relativeDate(job.postedAt);
+   237→   237→  const score = job.matchScore ?? 0;
+   238→   238→  const visibleSkills = job.skills.slice(0, 5);
+   239→   239→  const extraCount = job.skills.length - 5;
+   240→   240→  const sourceLabel = SOURCE_TYPE_LABEL[job.sourceType] ?? job.sourceType.replace(/_/g, ' ');
+   241→   241→
+   242→   242→  return (
+   243→   243→    <Card className="hover:border-border transition-all duration-200 group">
+   244→   244→      <CardContent className="p-4">
+   245→   245→        <div className="flex items-start gap-3">
+   246→   246→          {/* Match Score Ring */}
+   247→   247→          <MatchScoreRing score={score} />
+   248→   248→
+   249→   249→          {/* Main Content */}
+   250→   250→          <div className="min-w-0 flex-1">
+   251→   251→            <div className="flex items-center gap-2 mb-1 flex-wrap">
+   252→   252→              <span className="text-xs text-muted-foreground font-medium">
+   253→   253→                {job.company}
+   254→   254→              </span>
+   255→   255→              <Badge
+   256→   256→                variant="outline"
+   257→   257→                className={`text-[10px] ${SOURCE_TYPE_BADGE[job.sourceType] ?? ''}`}
+   258→   258→              >
+   259→   259→                {sourceLabel}
+   260→   260→              </Badge>
+   261→   261→              {job.isApplied && (
+   262→   262→                <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 text-[10px]">
+   263→   263→                  <CheckCircle className="w-3 h-3 mr-0.5" /> Applied
+   264→   264→                </Badge>
+   265→   265→              )}
+   266→   266→            </div>
+   267→   267→            <h3 className="font-semibold text-sm leading-tight mb-1.5">{job.title}</h3>
+   268→   268→
+   269→   269→            {/* Meta row */}
+   270→   270→            <div className="flex items-center gap-3 mb-3 text-xs text-muted-foreground flex-wrap">
+   271→   271→              {salary && (
+   272→   272→                <span className="flex items-center gap-1">
+   273→   273→                  <DollarSign className="w-3 h-3" />
+   274→   274→                  {salary}
+   275→   275→                </span>
+   276→   276→              )}
+   277→   277→              <span className="flex items-center gap-1">
+   278→   278→                {job.remote ? (
+   279→   279→                  <>
+   280→   280→                    <MapPin className="w-3 h-3" />
+   281→   281→                    <Badge variant="outline" className="text-[10px] py-0 px-1.5 h-4 bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-400 border-teal-200 dark:border-teal-800">
+   282→   282→                      Remote
+   283→   283→                    </Badge>
+   284→   284→                  </>
+   285→   285→                ) : job.location ? (
+   286→   286→                  <>
+   287→   287→                    <MapPin className="w-3 h-3" />
+   288→   288→                    {job.location}
+   289→   289→                  </>
+   290→   290→                ) : null}
+   291→   291→              </span>
+   292→   292→              {posted && (
+   293→   293→                <span className="flex items-center gap-1">
+   294→   294→                  <Clock className="w-3 h-3" />
+   295→   295→                  {posted}
+   296→   296→                </span>
+   297→   297→              )}
+   298→   298→            </div>
+   299→   299→
+   300→   300→            {/* Skills */}
+   301→   301→            <div className="flex flex-wrap gap-1.5 mb-3">
+   302→   302→              {visibleSkills.map((skill) => (
+   303→   303→                <Badge
+   304→   304→                  key={skill}
+   305→   305→                  variant="secondary"
+   306→   306→                  className="text-[10px] px-1.5 py-0"
+   307→   307→                >
+   308→   308→                  {skill}
+   309→   309→                </Badge>
+   310→   310→              ))}
+   311→   311→              {extraCount > 0 && (
+   312→   312→                <span className="text-[10px] text-muted-foreground self-center">
+   313→   313→                  +{extraCount} more
+   314→   314→                </span>
+   315→   315→              )}
+   316→   316→            </div>
+   317→   317→
+   318→   318→            {/* Actions */}
+   319→   319→            <div className="flex items-center gap-2 pt-2 border-t border-border/50">
+   320→   320→              <Button
+   321→   321→                variant="outline"
+   322→   322→                size="sm"
+   323→   323→                className="text-xs h-7"
+   324→   324→                onClick={(e) => {
+   325→   325→                  e.stopPropagation();
+   326→   326→                  onViewDetails();
+   327→   327→                }}
+   328→   328→              >
+   329→   329→                View Details
+   330→   330→              </Button>
+   331→   331→              <button
+   332→   332→                onClick={(e) => {
+   333→   333→                  e.stopPropagation();
+   334→   334→                  onToggleSave();
+   335→   335→                }}
+   336→   336→                className="ml-auto p-1.5 rounded-md hover:bg-muted transition-colors"
+   337→   337→                aria-label={job.isSaved ? 'Unsave job' : 'Save job'}
+   338→   338→              >
+   339→   339→                {job.isSaved ? (
+   340→   340→                  <BookmarkCheck className="w-4 h-4 text-pink-500" />
+   341→   341→                ) : (
+   342→   342→                  <Bookmark className="w-4 h-4 text-muted-foreground hover:text-pink-500 transition-colors" />
+   343→   343→                )}
+   344→   344→              </button>
+   345→   345→            </div>
+   346→   346→          </div>
+   347→   347→        </div>
+   348→   348→      </CardContent>
+   349→   349→    </Card>
+   350→   350→  );
+   351→   351→}
+   352→   352→
+   353→   353→// ─── Main Component ──────────────────────────────────────────────────────────
+   354→   354→
+   355→   355→export default function JobsPanel() {
+   356→   356→  const [jobs, setJobs] = useState<JobItem[]>([]);
+   357→   357→  const [totalJobs, setTotalJobs] = useState(0);
+   358→   358→  const [loading, setLoading] = useState(true);
+   359→   359→  const [loadingMore, setLoadingMore] = useState(false);
+   360→   360→  const [searchQuery, setSearchQuery] = useState('');
+   361→   361→  const [debouncedSearch, setDebouncedSearch] = useState('');
+   362→   362→  const [activeFilter, setActiveFilter] = useState('all');
+   363→   363→  const [remoteOnly, setRemoteOnly] = useState(false);
+   364→   364→  const [sortValue, setSortValue] = useState('matchScore_desc');
+   365→   365→  const [page, setPage] = useState(1);
+   366→   366→  const limit = 50;
+   367→   367→
+   368→   368→  const [dialogOpen, setDialogOpen] = useState(false);
+   369→   369→  const [selectedJob, setSelectedJob] = useState<JobItem | null>(null);
+   370→   370→
+   371→   371→  const [isScraping, setIsScraping] = useState(false);
+   372→   372→  const [scrapeData, setScrapeData] = useState<ScrapeResponseData | null>(null);
+   373→   373→  const [scrapeVisible, setScrapeVisible] = useState(false);
+   374→   374→  const scrapeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+   375→   375→
+   376→   376→  const { sortBy, sortOrder } = parseSortValue(sortValue);
+   377→   377→
+   378→   378→  // Debounce search
+   379→   379→  useEffect(() => {
+   380→   380→    const timer = setTimeout(() => {
+   381→   381→      setDebouncedSearch(searchQuery);
+   382→   382→    }, 300);
+   383→   383→    return () => clearTimeout(timer);
+   384→   384→  }, [searchQuery]);
+   385→   385→
+   386→   386→  // Reset page on filter/sort changes
+   387→   387→  useEffect(() => {
+   388→   388→    setPage(1);
+   389→   389→  }, [debouncedSearch, activeFilter, remoteOnly, sortValue]);
+   390→   390→
+   391→   391→  // Fetch jobs
+   392→   392→  const fetchJobs = useCallback(
+   393→   393→    async (pageNum: number, append: boolean) => {
+   394→   394→      const isFirstPage = !append;
+   395→   395→      if (isFirstPage) {
+   396→   396→        setLoading(true);
+   397→   397→      } else {
+   398→   398→        setLoadingMore(true);
+   399→   399→      }
+   400→   400→
+   401→   401→      try {
+   402→   402→        const params = new URLSearchParams({
+   403→   403→          sortBy,
+   404→   404→          sortOrder,
+   405→   405→          limit: String(limit),
+   406→   406→          page: String(pageNum),
+   407→   407→        });
+   408→   408→        if (debouncedSearch) params.set('search', debouncedSearch);
+   409→   409→        if (activeFilter !== 'all') params.set('sourceType', activeFilter);
+   410→   410→        if (remoteOnly) params.set('remote', 'true');
+   411→   411→
+   412→   412→        const res = await fetch(`/api/jobs?${params}`);
+   413→   413→        const json = await res.json();
+   414→   414→
+   415→   415→        const newJobs: JobItem[] = json.data ?? [];
+   416→   416→        const meta: JobsMeta = json.meta ?? { page: pageNum, limit, total: 0 };
+   417→   417→
+   418→   418→        if (isFirstPage) {
+   419→   419→          setJobs(newJobs);
+   420→   420→        } else {
+   421→   421→          setJobs((prev) => [...prev, ...newJobs]);
+   422→   422→        }
+   423→   423→        setTotalJobs(meta.total);
+   424→   424→      } catch {
+   425→   425→        toast.error('Failed to load jobs');
+   426→   426→      } finally {
+   427→   427→        setLoading(false);
+   428→   428→        setLoadingMore(false);
+   429→   429→      }
+   430→   430→    },
+   431→   431→    [sortBy, sortOrder, debouncedSearch, activeFilter, remoteOnly, limit]
+   432→   432→  );
+   433→   433→
+   434→   434→  // Re-fetch when page or filters change
+   435→   435→  useEffect(() => {
+   436→   436→    fetchJobs(1, false);
+   437→   437→    // eslint-disable-next-line react-hooks/exhaustive-deps
+   438→   438→  }, [debouncedSearch, activeFilter, remoteOnly, sortValue]);
+   439→   439→
+   440→   440→  const handleLoadMore = useCallback(() => {
+   441→   441→    const nextPage = page + 1;
+   442→   442→    setPage(nextPage);
+   443→   443→    fetchJobs(nextPage, true);
+   444→   444→  }, [page, fetchJobs]);
+   445→   445→
+   446→   446→  const handleToggleSave = useCallback(
+   447→   447→    async (job: JobItem) => {
+   448→   448→      const newSaved = !job.isSaved;
+   449→   449→      // Optimistic update
+   450→   450→      setJobs((prev) =>
+   451→   451→        prev.map((j) => (j.id === job.id ? { ...j, isSaved: newSaved } : j))
+   452→   452→      );
+   453→   453→      // Also update selected job if it's the same
+   454→   454→      setSelectedJob((prev) =>
+   455→   455→        prev?.id === job.id ? { ...prev, isSaved: newSaved } : prev
+   456→   456→      );
+   457→   457→
+   458→   458→      try {
+   459→   459→        await fetch('/api/jobs', {
+   460→   460→          method: 'PATCH',
+   461→   461→          headers: { 'Content-Type': 'application/json' },
+   462→   462→          body: JSON.stringify({ jobId: job.id, isSaved: newSaved }),
+   463→   463→        });
+   464→   464→        toast.success(newSaved ? 'Job saved' : 'Job unsaved');
+   465→   465→      } catch {
+   466→   466→        // Revert
+   467→   467→        setJobs((prev) =>
+   468→   468→          prev.map((j) => (j.id === job.id ? { ...j, isSaved: job.isSaved } : j))
+   469→   469→        );
+   470→   470→        setSelectedJob((prev) =>
+   471→   471→          prev?.id === job.id ? { ...prev, isSaved: job.isSaved } : prev
+   472→   472→        );
+   473→   473→        toast.error('Failed to update save status');
+   474→   474→      }
+   475→   475→    },
+   476→   476→    []
+   477→   477→  );
+   478→   478→
+   479→   479→  const handleScrape = useCallback(
+   480→   480→    async (aiOnly: boolean) => {
+   481→   481→      setIsScraping(true);
+   482→   482→      setScrapeVisible(false);
+   483→   483→      if (scrapeTimerRef.current) clearTimeout(scrapeTimerRef.current);
+   484→   484→
+   485→   485→      try {
+   486→   486→        const body = aiOnly ? { aiOnly: true } : {};
+   487→   487→        const res = await fetch('/api/scrape', {
+   488→   488→          method: 'POST',
+   489→   489→          headers: { 'Content-Type': 'application/json' },
+   490→   490→          body: JSON.stringify(body),
+   491→   491→        });
+   492→   492→        const json = await res.json();
+   493→   493→        const data: ScrapeResponseData = json.data;
+   494→   494→        setScrapeData(data);
+   495→   495→        setScrapeVisible(true);
+   496→   496→
+   497→   497→        // Auto-dismiss after 10s
+   498→   498→        scrapeTimerRef.current = setTimeout(() => {
+   499→   499→          setScrapeVisible(false);
+   500→   500→        }, 10000);
+   501→   501→
+   502→   502→        toast.success(
+   503→   503→          `Scraped ${data.sourcesScraped} sources — ${data.totalJobsNew} new jobs found`
+   504→   504→        );
+   505→   505→
+   506→   506→        // Refresh jobs
+   507→   507→        setPage(1);
+   508→   508→        fetchJobs(1, false);
+   509→   509→      } catch {
+   510→   510→        toast.error('Scraping failed. Please try again.');
+   511→   511→      } finally {
+   512→   512→        setIsScraping(false);
+   513→   513→      }
+   514→   514→    },
+   515→   515→    [fetchJobs]
+   516→   516→  );
+   517→   517→
+   518→   518→  const dismissScrapeBanner = useCallback(() => {
+   519→   519→    setScrapeVisible(false);
+   520→   520→    if (scrapeTimerRef.current) clearTimeout(scrapeTimerRef.current);
+   521→   521→  }, []);
+   522→   522→
+   523→   523→  const hasMore = jobs.length < totalJobs;
+   524→   524→  const displayedSourceLabel =
+   525→   525→    SOURCE_TYPE_LABEL[activeFilter] ?? activeFilter.replace(/_/g, ' ');
+   526→   526→
+   527→   527→  return (
+   528→   528→    <div className="space-y-4">
+   529→   529→      {/* ── Scrape Buttons ── */}
+   530→   530→      <div className="flex flex-wrap gap-2">
+   531→   531→        <Button
+   532→   532→          onClick={() => handleScrape(false)}
+   533→   533→          disabled={isScraping}
+   534→   534→          className="text-xs"
+   535→   535→        >
+   536→   536→          {isScraping ? (
+   537→   537→            <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+   538→   538→          ) : (
+   539→   539→            <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+   540→   540→          )}
+   541→   541→          Scrape All Sources
+   542→   542→        </Button>
+   543→   543→        <Button
+   544→   544→          variant="outline"
+   545→   545→          onClick={() => handleScrape(true)}
+   546→   546→          disabled={isScraping}
+   547→   547→          className="text-xs"
+   548→   548→        >
+   549→   549→          {isScraping ? (
+   550→   550→            <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+   551→   551→          ) : (
+   552→   552→            <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+   553→   553→          )}
+   554→   554→          Scrape AI Training Only
+   555→   555→        </Button>
+   556→   556→      </div>
+   557→   557→
+   558→   558→      {/* ── Scrape Results Banner ── */}
+   559→   559→      {scrapeVisible && scrapeData && (
+   560→   560→        <Card className="border-emerald-200 dark:border-emerald-800 relative">
+   561→   561→          <button
+   562→   562→            onClick={dismissScrapeBanner}
+   563→   563→            className="absolute top-3 right-3 p-1 rounded-md hover:bg-muted transition-colors"
+   564→   564→            aria-label="Dismiss results"
+   565→   565→          >
+   566→   566→            <X className="w-4 h-4" />
+   567→   567→          </button>
+   568→   568→          <CardContent className="p-3">
+   569→   569→            <div className="flex items-center gap-2 mb-2">
+   570→   570→              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+   571→   571→              <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+   572→   572→                Scraping Complete — {scrapeData.totalJobsFound} found,{' '}
+   573→   573→                {scrapeData.totalJobsNew} new
+   574→   574→              </p>
+   575→   575→            </div>
+   576→   576→            <div className="overflow-x-auto max-h-48 overflow-y-auto">
+   577→   577→              <table className="w-full text-sm">
+   578→   578→                <thead>
+   579→   579→                  <tr className="border-b border-border">
+   580→   580→                    <th className="text-left py-1 pr-4 font-medium text-muted-foreground text-xs">
+   581→   581→                      Source
+   582→   582→                    </th>
+   583→   583→                    <th className="text-right py-1 px-3 font-medium text-muted-foreground text-xs">
+   584→   584→                      Status
+   585→   585→                    </th>
+   586→   586→                    <th className="text-right py-1 px-3 font-medium text-muted-foreground text-xs">
+   587→   587→                      Found
+   588→   588→                    </th>
+   589→   589→                    <th className="text-right py-1 pl-3 font-medium text-muted-foreground text-xs">
+   590→   590→                      New
+   591→   591→                    </th>
+   592→   592→                    <th className="text-right py-1 pl-3 font-medium text-muted-foreground text-xs">
+   593→   593→                      Duration
+   594→   594→                    </th>
+   595→   595→                  </tr>
+   596→   596→                </thead>
+   597→   597→                <tbody>
+   598→   598→                  {scrapeData.results.map((r, i) => (
+   599→   599→                    <tr
+   600→   600→                      key={i}
+   601→   601→                      className="border-b border-border/50 last:border-0"
+   602→   602→                    >
+   603→   603→                      <td className="py-1.5 pr-4 text-sm">{r.source}</td>
+   604→   604→                      <td className="py-1.5 px-3 text-sm text-right">
+   605→   605→                        <Badge
+   606→   606→                          variant="outline"
+   607→   607→                          className={`text-[10px] ${
+   608→   608→                            r.status === 'success'
+   609→   609→                              ? 'text-emerald-600 border-emerald-200'
+   610→   610→                              : r.status === 'partial'
+   611→   611→                                ? 'text-amber-600 border-amber-200'
+   612→   612→                                : 'text-red-600 border-red-200'
+   613→   613→                          }`}
+   614→   614→                        >
+   615→   615→                          {r.status}
+   616→   616→                        </Badge>
+   617→   617→                      </td>
+   618→   618→                      <td className="py-1.5 px-3 text-sm text-right tabular-nums">
+   619→   619→                        {r.jobsFound}
+   620→   620→                      </td>
+   621→   621→                      <td className="py-1.5 pl-3 text-sm text-right tabular-nums text-emerald-600 font-medium">
+   622→   622→                        +{r.jobsNew}
+   623→   623→                      </td>
+   624→   624→                      <td className="py-1.5 pl-3 text-sm text-right tabular-nums text-muted-foreground">
+   625→   625→                        {r.duration > 1000
+   626→   626→                          ? `${(r.duration / 1000).toFixed(1)}s`
+   627→   627→                          : `${r.duration}ms`}
+   628→   628→                      </td>
+   629→   629→                    </tr>
+   630→   630→                  ))}
+   631→   631→                </tbody>
+   632→   632→              </table>
+   633→   633→            </div>
+   634→   634→          </CardContent>
+   635→   635→        </Card>
+   636→   636→      )}
+   637→   637→
+   638→   638→      {/* ── Filters Bar ── */}
+   639→   639→      <div className="bg-card rounded-xl border border-border/50 p-3 space-y-3">
+   640→   640→        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+   641→   641→          {/* Search Input */}
+   642→   642→          <div className="relative flex-1 min-w-0">
+   643→   643→            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+   644→   644→            <Input
+   645→   645→              placeholder="Search by title, company, or skills..."
+   646→   646→              value={searchQuery}
+   647→   647→              onChange={(e) => setSearchQuery(e.target.value)}
+   648→   648→              className="pl-9 h-9"
+   649→   649→            />
+   650→   650→          </div>
+   651→   651→
+   652→   652→          {/* Sort Select */}
+   653→   653→          <Select value={sortValue} onValueChange={setSortValue}>
+   654→   654→            <SelectTrigger className="w-[160px] h-9">
+   655→   655→              <SelectValue />
+   656→   656→            </SelectTrigger>
+   657→   657→            <SelectContent>
+   658→   658→              {SORT_OPTIONS.map((opt) => (
+   659→   659→                <SelectItem key={opt.value} value={opt.value}>
+   660→   660→                  {opt.label}
+   661→   661→                </SelectItem>
+   662→   662→              ))}
+   663→   663→            </SelectContent>
+   664→   664→          </Select>
+   665→   665→
+   666→   666→          {/* Remote Toggle */}
+   667→   667→          <div className="flex items-center gap-2 shrink-0">
+   668→   668→            <span className="text-xs text-muted-foreground whitespace-nowrap">
+   669→   669→              Remote
+   670→   670→            </span>
+   671→   671→            <Switch checked={remoteOnly} onCheckedChange={setRemoteOnly} />
+   672→   672→          </div>
+   673→   673→        </div>
+   674→   674→
+   675→   675→        {/* Source Type Filter Pills */}
+   676→   676→        <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+   677→   677→          {SOURCE_FILTER_OPTIONS.map((opt) => (
+   678→   678→            <button
+   679→   679→              key={opt.value}
+   680→   680→              onClick={() => setActiveFilter(opt.value)}
+   681→   681→              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
+   682→   682→                activeFilter === opt.value
+   683→   683→                  ? 'bg-emerald-500 text-white'
+   684→   684→                  : 'bg-muted text-muted-foreground hover:bg-muted/80'
+   685→   685→              }`}
+   686→   686→            >
+   687→   687→              {opt.label}
+   688→   688→            </button>
+   689→   689→          ))}
+   690→   690→        </div>
+   691→   691→
+   692→   692→        {/* Job Count */}
+   693→   693→        <p className="text-xs text-muted-foreground">
+   694→   694→          Showing {jobs.length} of {totalJobs} jobs
+   695→   695→          {activeFilter !== 'all' && ` in ${displayedSourceLabel}`}
+   696→   696→          {remoteOnly && ' (remote only)'}
+   697→   697→        </p>
+   698→   698→      </div>
+   699→   699→
+   700→   700→      {/* ── Job List ── */}
+   701→   701→      {loading ? (
+   702→   702→        <div className="space-y-3">
+   703→   703→          {Array.from({ length: 6 }).map((_, i) => (
+   704→   704→            <Skeleton key={i} className="h-[160px] rounded-xl" />
+   705→   705→          ))}
+   706→   706→        </div>
+   707→   707→      ) : jobs.length === 0 ? (
+   708→   708→        <div className="flex flex-col items-center justify-center py-16 text-center">
+   709→   709→          <Search className="w-10 h-10 text-muted-foreground/40 mb-3" />
+   710→   710→          <p className="text-sm font-medium text-muted-foreground">
+   711→   711→            No jobs match your filters.
+   712→   712→          </p>
+   713→   713→          <p className="text-xs text-muted-foreground/70 mt-1">
+   714→   714→            Try adjusting your search or filter criteria.
+   715→   715→          </p>
+   716→   716→        </div>
+   717→   717→      ) : (
+   718→   718→        <div className="max-h-[calc(100vh-380px)] overflow-y-auto space-y-3 pr-1">
+   719→   719→          {jobs.map((job) => (
+   720→   720→            <JobCard
+   721→   721→              key={job.id}
+   722→   722→              job={job}
+   723→   723→              onViewDetails={() => {
+   724→   724→                setSelectedJob(job);
+   725→   725→                setDialogOpen(true);
+   726→   726→              }}
+   727→   727→              onToggleSave={() => handleToggleSave(job)}
+   728→   728→            />
+   729→   729→          ))}
+   730→   730→
+   731→   731→          {/* Load More */}
+   732→   732→          {hasMore && (
+   733→   733→            <div className="flex justify-center pt-2">
+   734→   734→              <Button
+   735→   735→                variant="outline"
+   736→   736→                onClick={handleLoadMore}
+   737→   737→                disabled={loadingMore}
+   738→   738→                className="text-xs"
+   739→   739→              >
+   740→   740→                {loadingMore ? (
+   741→   741→                  <>
+   742→   742→                    <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+   743→   743→                    Loading...
+   744→   744→                  </>
+   745→   745→                ) : (
+   746→   746→                  `Load More (${totalJobs - jobs.length} remaining)`
+   747→   747→                )}
+   748→   748→              </Button>
+   749→   749→            </div>
+   750→   750→          )}
+   751→   751→        </div>
+   752→   752→      )}
+   753→   753→
+   754→   754→      {/* ── Job Detail Dialog ── */}
+   755→   755→      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+   756→   756→        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+   757→   757→          {selectedJob && (
+   758→   758→            <>
+   759→   759→              <DialogHeader>
+   760→   760→                <div className="flex items-center gap-2 mb-1 flex-wrap">
+   761→   761→                  <Badge
+   762→   762→                    variant="outline"
+   763→   763→                    className={`text-[10px] ${SOURCE_TYPE_BADGE[selectedJob.sourceType] ?? ''}`}
+   764→   764→                  >
+   765→   765→                    {SOURCE_TYPE_LABEL[selectedJob.sourceType] ?? selectedJob.sourceType.replace(/_/g, ' ')}
+   766→   766→                  </Badge>
+   767→   767→                  {selectedJob.remote && (
+   768→   768→                    <Badge
+   769→   769→                      variant="outline"
+   770→   770→                      className="text-[10px] bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-400 border-teal-200 dark:border-teal-800"
+   771→   771→                    >
+   772→   772→                      Remote
+   773→   773→                    </Badge>
+   774→   774→                  )}
+   775→   775→                  {selectedJob.isApplied && (
+   776→   776→                    <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 text-[10px]">
+   777→   777→                      <CheckCircle className="w-3 h-3 mr-0.5" /> Applied
+   778→   778→                    </Badge>
+   779→   779→                  )}
+   780→   780→                </div>
+   781→   781→                <DialogTitle className="text-lg">{selectedJob.title}</DialogTitle>
+   782→   782→                <DialogDescription>
+   783→   783→                  {selectedJob.company}
+   784→   784→                  {selectedJob.location && ` — ${selectedJob.location}`}
+   785→   785→                </DialogDescription>
+   786→   786→              </DialogHeader>
+   787→   787→
+   788→   788→              <div className="space-y-4 mt-2">
+   789→   789→                {/* Match Score & Salary Row */}
+   790→   790→                <div className="flex items-center gap-4">
+   791→   791→                  <MatchScoreRing score={selectedJob.matchScore ?? 0} />
+   792→   792→                  <div className="text-sm space-y-1">
+   793→   793→                    <p className="text-muted-foreground">
+   794→   794→                      Match Score:{' '}
+   795→   795→                      <span className="font-semibold text-foreground">
+   796→   796→                        {selectedJob.matchScore ?? 0}%
+   797→   797→                      </span>
+   798→   798→                    </p>
+   799→   799→                    {formatSalary(selectedJob) && (
+   800→   800→                      <p className="text-muted-foreground">
+   801→   801→                        Salary:{' '}
+   802→   802→                        <span className="font-semibold text-foreground">
+   803→   803→                          {formatSalary(selectedJob)}
+   804→   804→                        </span>
+   805→   805→                      </p>
+   806→   806→                    )}
+   807→   807→                    {selectedJob.postedAt && (
+   808→   808→                      <p className="text-muted-foreground">
+   809→   809→                        Posted: {relativeDate(selectedJob.postedAt)}
+   810→   810→                      </p>
+   811→   811→                    )}
+   812→   812→                  </div>
+   813→   813→                </div>
+   814→   814→
+   815→   815→                {/* All Skills */}
+   816→   816→                <div>
+   817→   817→                  <h4 className="text-sm font-semibold mb-2">Skills</h4>
+   818→   818→                  <div className="flex flex-wrap gap-1.5">
+   819→   819→                    {selectedJob.skills.map((s) => (
+   820→   820→                      <Badge key={s} variant="secondary" className="text-xs">
+   821→   821→                        {s}
+   822→   822→                      </Badge>
+   823→   823→                    ))}
+   824→   824→                    {selectedJob.skills.length === 0 && (
+   825→   825→                      <span className="text-xs text-muted-foreground">
+   826→   826→                        No skills listed
+   827→   827→                      </span>
+   828→   828→                    )}
+   829→   829→                  </div>
+   830→   830→                </div>
+   831→   831→
+   832→   832→                {/* Description */}
+   833→   833→                <div>
+   834→   834→                  <h4 className="text-sm font-semibold mb-1">Description</h4>
+   835→   835→                  <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
+   836→   836→                    {selectedJob.description}
+   837→   837→                  </p>
+   838→   838→                </div>
+   839→   839→
+   840→   840→                {/* Requirements */}
+   841→   841→                {selectedJob.requirements && (
+   842→   842→                  <div>
+   843→   843→                    <h4 className="text-sm font-semibold mb-1">Requirements</h4>
+   844→   844→                    <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
+   845→   845→                      {selectedJob.requirements}
+   846→   846→                    </p>
+   847→   847→                  </div>
+   848→   848→                )}
+   849→   849→
+   850→   850→                {/* Actions */}
+   851→   851→                <div className="flex flex-wrap gap-2 pt-3 border-t border-border/50">
+   852→   852→                  <Button
+   853→   853→                    size="sm"
+   854→   854→                    className="text-xs"
+   855→   855→                    onClick={() =>
+   856→   856→                      window.open(selectedJob.sourceUrl, '_blank', 'noopener')
+   857→   857→                    }
+   858→   858→                  >
+   859→   859→                    <ExternalLink className="w-3.5 h-3.5 mr-1" />
+   860→   860→                    View on {selectedJob.source}
+   861→   861→                  </Button>
+   862→   862→                  <Button
+   863→   863→                    size="sm"
+   864→   864→                    variant={selectedJob.isSaved ? 'default' : 'outline'}
+   865→   865→                    className="text-xs"
+   866→   866→                    onClick={() => handleToggleSave(selectedJob)}
+   867→   867→                  >
+   868→   868→                    {selectedJob.isSaved ? (
+   869→   869→                      <BookmarkCheck className="w-3.5 h-3.5 mr-1" />
+   870→   870→                    ) : (
+   871→   871→                      <Bookmark className="w-3.5 h-3.5 mr-1" />
+   872→   872→                    )}
+   873→   873→                    {selectedJob.isSaved ? 'Saved' : 'Save Job'}
+   874→   874→                  </Button>
+   875→   875→                  <Button
+   876→   876→                    size="sm"
+   877→   877→                    variant="outline"
+   878→   878→                    className="text-xs"
+   879→   879→                    onClick={() => {
+   880→   880→                      toast.info(
+   881→   881→                        'Apply with Resume: This feature would open the application flow with your primary resume.',
+   882→   882→                        { duration: 4000 }
+   883→   883→                      );
+   884→   884→                    }}
+   885→   885→                  >
+   886→   886→                    <FileText className="w-3.5 h-3.5 mr-1" />
+   887→   887→                    Apply with Resume
+   888→   888→                  </Button>
+   889→   889→                </div>
+   890→   890→              </div>
+   891→   891→            </>
+   892→   892→          )}
+   893→   893→        </DialogContent>
+   894→   894→      </Dialog>
+   895→   895→    </div>
+   896→   896→  );
+   897→   897→}
