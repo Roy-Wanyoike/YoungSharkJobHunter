@@ -189,15 +189,13 @@ export async function GET() {
     }));
 
     return NextResponse.json({
-      data: {
-        stats,
-        dailyApplications,
-        matchDistribution,
-        sourceDistribution,
-        statusBreakdown,
-        scrapingHealth,
-        recentNotifications: notifications,
-      },
+      stats,
+      dailyApplications,
+      matchDistribution,
+      sourceDistribution,
+      statusBreakdown,
+      scrapingHealth,
+      recentNotifications: notifications,
     });
   } catch (error) {
     console.error('[API /dashboard] GET error:', error);

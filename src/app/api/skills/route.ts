@@ -26,7 +26,7 @@ export async function GET(request: Request) {
     });
 
     return NextResponse.json({
-      data: skills.map((s) => ({
+      skills: skills.map((s) => ({
         id: s.id,
         name: s.name,
         category: s.category,
@@ -34,7 +34,6 @@ export async function GET(request: Request) {
         createdAt: s.createdAt.toISOString(),
         updatedAt: s.updatedAt.toISOString(),
       })),
-      meta: { total: skills.length },
     });
   } catch (error) {
     console.error('[API /skills] GET error:', error);

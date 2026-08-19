@@ -12,7 +12,7 @@ export async function GET(request: Request) {
     // Get the first user (single-user app)
     const user = await db.user.findFirst({ select: { id: true } });
     if (!user) {
-      return NextResponse.json({ data: [], meta: { total: 0 } });
+      return NextResponse.json({ notifications: [] });
     }
 
     const where: Prisma.NotificationWhereInput = { userId: user.id };
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
     });
 
     return NextResponse.json({
-      data: notifications.map((n) => ({
+      notifications: notifications.map((n) => ({
         id: n.id,
         type: n.type,
         title: n.title,
@@ -35,7 +35,6 @@ export async function GET(request: Request) {
         link: n.link,
         createdAt: n.createdAt.toISOString(),
       })),
-      meta: { total: notifications.length },
     });
   } catch (error) {
     console.error('[API /notifications] GET error:', error);

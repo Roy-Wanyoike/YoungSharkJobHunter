@@ -27,7 +27,7 @@ export async function GET() {
     }
 
     if (!resume) {
-      return NextResponse.json({ data: null });
+      return NextResponse.json({ resume: null });
     }
 
     const parsedData = safeParseJson(resume.parsedData, {});
@@ -39,7 +39,7 @@ export async function GET() {
     const languages = safeParseJson<string[]>(resume.languages, []);
 
     return NextResponse.json({
-      data: {
+      resume: {
         id: resume.id,
         userId: resume.userId,
         fileName: resume.fileName,
@@ -154,7 +154,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json(
       {
-        data: {
+        resume: {
           id: resume.id,
           userId: resume.userId,
           fileName: resume.fileName,

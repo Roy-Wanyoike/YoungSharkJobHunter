@@ -102,7 +102,7 @@ export default function SourcesPanel() {
       const res = await fetch('/api/sources');
       if (!res.ok) throw new Error('Failed');
       const json = await res.json();
-      setData(json.data || json);
+      setData(json);
     } catch {
       setData(null);
     } finally {

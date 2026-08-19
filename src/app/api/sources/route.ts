@@ -50,9 +50,8 @@ export async function GET() {
     }
 
     return NextResponse.json({
-      data: mapped,
-      grouped,
-      meta: { total: mapped.length },
+      sources: mapped,
+      groupedByType: grouped,
     });
   } catch (error) {
     console.error('[API /sources] GET error:', error);

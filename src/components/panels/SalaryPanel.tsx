@@ -60,7 +60,7 @@ export default function SalaryPanel() {
       const res = await fetch(`/api/salary?${params}`);
       if (!res.ok) throw new Error('Failed to fetch salary data');
       const json = await res.json();
-      setData(json.data || json);
+      setData(json);
     } catch {
       setData(null);
     } finally {

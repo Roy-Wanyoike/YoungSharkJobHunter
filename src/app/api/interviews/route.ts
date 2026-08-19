@@ -36,8 +36,7 @@ export async function GET(request: Request) {
       orderBy: { date: 'asc' },
     });
 
-    return NextResponse.json({
-      data: interviews.map((i) => ({
+    return NextResponse.json(interviews.map((i) => ({
         id: i.id,
         applicationId: i.applicationId,
         round: i.round,
@@ -56,9 +55,7 @@ export async function GET(request: Request) {
         },
         createdAt: i.createdAt.toISOString(),
         updatedAt: i.updatedAt.toISOString(),
-      })),
-      meta: { total: interviews.length },
-    });
+      }))
   } catch (error) {
     console.error('[API /interviews] GET error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -128,8 +125,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json(
       {
-        data: {
-          id: interview.id,
+        id: interview.id,
           applicationId: interview.applicationId,
           round: interview.round,
           type: interview.type,
@@ -141,7 +137,6 @@ export async function POST(request: Request) {
           feedback: interview.feedback,
           createdAt: interview.createdAt.toISOString(),
           updatedAt: interview.updatedAt.toISOString(),
-        },
       },
       { status: 201 }
     );
@@ -195,7 +190,6 @@ export async function PATCH(request: Request) {
     });
 
     return NextResponse.json({
-      data: {
         id: updated.id,
         applicationId: updated.applicationId,
         round: updated.round,
@@ -208,7 +202,6 @@ export async function PATCH(request: Request) {
         feedback: updated.feedback,
         createdAt: updated.createdAt.toISOString(),
         updatedAt: updated.updatedAt.toISOString(),
-      },
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {

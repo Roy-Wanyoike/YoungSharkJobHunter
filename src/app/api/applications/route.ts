@@ -203,9 +203,9 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json({
-      data: applications.map(toApplicationResponse),
+      applications: applications.map(toApplicationResponse),
+      total: applications.length,
       counts,
-      meta: { total: applications.length },
     });
   } catch (error) {
     console.error('[API /applications] GET error:', error);

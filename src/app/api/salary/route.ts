@@ -72,28 +72,12 @@ export async function GET(request: Request) {
 
     // Build response
     return NextResponse.json({
-      data: {
-        byRole: filteredByRole,
-        bySourceType: insights.bySourceType,
-        overall: {
-          min: insights.overallMin,
-          max: insights.overallMax,
-          median: insights.overallMedian,
-          sampleSize: insights.totalSampleSize,
-        },
-        salaryRecords: salaryRecords.map((r) => ({
-          id: r.id,
-          role: r.role,
-          level: r.level,
-          location: r.location,
-          source: r.source,
-          salaryMin: r.salaryMin,
-          salaryMax: r.salaryMax,
-          salaryType: r.salaryType,
-          currency: r.currency,
-          sampleSize: r.sampleSize,
-        })),
-      },
+      byRole: filteredByRole,
+      bySourceType: insights.bySourceType,
+      overallMin: insights.overallMin,
+      overallMax: insights.overallMax,
+      overallMedian: insights.overallMedian,
+      totalSampleSize: insights.totalSampleSize,
     });
   } catch (error) {
     console.error('[API /salary] GET error:', error);

@@ -595,7 +595,7 @@ export default function DashboardPanel() {
     try {
       const res = await fetch('/api/dashboard');
       if (res.ok) {
-        const json: DashboardData = await res.json();
+        const json = await res.json();
         setData(json);
       }
     } catch {

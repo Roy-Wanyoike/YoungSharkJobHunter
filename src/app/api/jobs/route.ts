@@ -246,8 +246,10 @@ export async function GET(request: Request) {
     const paginated = processed.slice(start, start + filters.limit);
 
     return NextResponse.json({
-      data: paginated,
-      meta: { page: filters.page, limit: filters.limit, total },
+      jobs: paginated,
+      total,
+      page: filters.page,
+      limit: filters.limit,
     });
   } catch (error) {
     console.error('[API /jobs] GET error:', error);
