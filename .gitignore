@@ -65,4 +65,4 @@ server.log
 *.db-journal
 
 # Seed scripts with test data
-scripts/seed-db.ts
+scripts/seed-db.tsdb/
