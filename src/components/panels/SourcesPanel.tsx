@@ -102,9 +102,15 @@ export default function SourcesPanel() {
       const res = await fetch('/api/sources');
       if (!res.ok) throw new Error('Failed');
       const json = await res.json();
-      setData(json);
+      if (json && json.sources) {
+        setData(json);
+      } else {
+        setData(null);
+        toast.error('Invalid sources data received');
+      }
     } catch {
       setData(null);
+      toast.error('Failed to load sources');
     } finally {
       setLoading(false);
     }
@@ -123,7 +129,7 @@ export default function SourcesPanel() {
       });
       if (!res.ok) throw new Error('Scraping failed');
       const json = await res.json();
-      const results = json.results || json.data?.results || [];
+      const results: ScrapeResult[] = json.results ?? [];
       setScrapeResults(results);
       toast.success(`Scraped ${results.length} sources, found ${json.totalJobsFound || 0} jobs`);
       fetchSources();
@@ -236,9 +242,9 @@ export default function SourcesPanel() {
           <Input placeholder="Search sources..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Badge variant={typeFilter === 'all' ? 'default' : 'outline'} className="cursor-pointer" onClick={() => setTypeFilter('all')}>All</Badge>
+          <Badge variant={typeFilter === 'all' ? 'default' : 'outline'} className="cursor-pointer" role="button" tabIndex={0} onClick={() => setTypeFilter('all')} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setTypeFilter('all'); }}>All</Badge>
           {SOURCE_TYPE_ORDER.filter(t => (data?.sources || []).some(s => s.type === t)).map(t => (
-            <Badge key={t} variant={typeFilter === t ? 'default' : 'outline'} className="cursor-pointer" onClick={() => setTypeFilter(t)}>
+            <Badge key={t} variant={typeFilter === t ? 'default' : 'outline'} className="cursor-pointer" role="button" tabIndex={0} onClick={() => setTypeFilter(t)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setTypeFilter(t); }}>
               {SOURCE_TYPE_LABELS[t] || t}
             </Badge>
           ))}
@@ -256,7 +262,19 @@ export default function SourcesPanel() {
           const isCollapsed = collapsedGroups.has(type);
           return (
             <Card key={type}>
-              <CardHeader className="py-3 cursor-pointer" onClick={() => toggleGroup(type)}>
+              <CardHeader
+                className="py-3 cursor-pointer"
+                onClick={() => toggleGroup(type)}
+                role="button"
+                tabIndex={0}
+                aria-expanded={!isCollapsed}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    toggleGroup(type);
+                  }
+                }}
+              >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}

@@ -4,9 +4,11 @@ import { useState, lazy, Suspense } from 'react';
 import {
   LayoutDashboard, Search, FileText, Sparkles, ClipboardList,
   Bot, ChevronLeft, ChevronRight, Menu, Zap, Globe, Brain,
-  GraduationCap, DollarSign, Plug, Bell,
+  GraduationCap, DollarSign, Plug,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { useAppStore } from '@/lib/store';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -44,7 +46,8 @@ function PanelFallback() {
 }
 
 export default function Home() {
-  const [activePanel, setActivePanel] = useState('dashboard');
+  const activePanel = useAppStore((s) => s.activePanel);
+  const setActivePanel = useAppStore((s) => s.setActivePanel);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -78,7 +81,7 @@ export default function Home() {
         return (
           <Tooltip key={item.id} delayDuration={0}>
             <TooltipTrigger asChild>
-              <button onClick={() => handleNavClick(item.id)} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${isActive ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}>
+              <button onClick={() => handleNavClick(item.id)} aria-current={isActive ? 'page' : undefined} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${isActive ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}>
                 <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-emerald-600 dark:text-emerald-400' : ''}`} />
                 {(!sidebarCollapsed || undefined) && <span className="truncate">{item.label}</span>}
                 {(!sidebarCollapsed || undefined) && item.badge && (<Badge variant={isActive ? 'default' : 'secondary'} className={`ml-auto text-xs px-1.5 py-0 h-5 min-w-5 flex items-center justify-center ${isActive ? 'bg-emerald-600 text-white hover:bg-emerald-600' : ''}`}>{item.badge}</Badge>)}
@@ -94,7 +97,7 @@ export default function Home() {
   return (
     <div className="min-h-screen flex bg-background">
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex flex-col border-r border-border bg-card shrink-0 sticky top-0 h-screen transition-all duration-300" style={{ width: sidebarCollapsed ? 64 : 260 }}>
+      <aside className={`hidden lg:flex flex-col border-r border-border bg-card shrink-0 sticky top-0 h-screen transition-all duration-300 ${sidebarCollapsed ? 'w-16' : 'w-[260px]'}`}>
         <div className="flex flex-col h-full">
           <div className="p-4 flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shrink-0"><Zap className="w-5 h-5 text-white" /></div>
@@ -156,9 +159,11 @@ export default function Home() {
           </div>
         </header>
         <div className="p-4 lg:p-6">
-          <Suspense fallback={<PanelFallback />}>
-            {renderPanel()}
-          </Suspense>
+          <ErrorBoundary>
+            <Suspense fallback={<PanelFallback />}>
+              {renderPanel()}
+            </Suspense>
+          </ErrorBoundary>
         </div>
       </main>
     </div>

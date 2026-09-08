@@ -3,6 +3,36 @@ import { db } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 import { eventBus, DomainEvents } from '@/services/events';
 
+const VALID_INTERVIEW_STATUSES = ['scheduled', 'completed', 'cancelled', 'rescheduled'] as const;
+
+type InterviewResponse = {
+  id: string;
+  applicationId: string;
+  round: number;
+  type: string | null;
+  date: string | null;
+  duration: number | null;
+  interviewer: string | null;
+  status: string;
+  notes: string | null;
+  feedback: string | null;
+  prepNotes?: string | null;
+  application?: {
+    id: string;
+    status: string;
+    job: {
+      id: string;
+      title: string;
+      company: string;
+      sourceType: string;
+      location: string | null;
+      remote: boolean;
+    } | null;
+  };
+  createdAt: string;
+  updatedAt: string;
+};
+
 // ─── GET ────────────────────────────────────────────────────────────────────
 
 export async function GET(request: Request) {
@@ -15,47 +45,52 @@ export async function GET(request: Request) {
       where.applicationId = applicationId;
     }
 
-    const interviews = await db.interview.findMany({
-      where,
-      include: {
-        application: {
-          include: {
-            job: {
-              select: {
-                id: true,
-                title: true,
-                company: true,
-                sourceType: true,
-                location: true,
-                remote: true,
+    const [interviews, total] = await Promise.all([
+      db.interview.findMany({
+        where,
+        include: {
+          application: {
+            include: {
+              job: {
+                select: {
+                  id: true,
+                  title: true,
+                  company: true,
+                  sourceType: true,
+                  location: true,
+                  remote: true,
+                },
               },
             },
           },
         },
-      },
-      orderBy: { date: 'asc' },
-    });
+        orderBy: { date: 'asc' },
+      }),
+      db.interview.count({ where }),
+    ]);
 
-    return NextResponse.json(interviews.map((i) => ({
-        id: i.id,
-        applicationId: i.applicationId,
-        round: i.round,
-        type: i.type,
-        date: i.date?.toISOString() ?? null,
-        duration: i.duration,
-        interviewer: i.interviewer,
-        status: i.status,
-        notes: i.notes,
-        feedback: i.feedback,
-        prepNotes: i.prepNotes,
-        application: {
-          id: i.application.id,
-          status: i.application.status,
-          job: i.application.job ?? null,
-        },
-        createdAt: i.createdAt.toISOString(),
-        updatedAt: i.updatedAt.toISOString(),
-      }))
+    const data: InterviewResponse[] = interviews.map((i) => ({
+      id: i.id,
+      applicationId: i.applicationId,
+      round: i.round,
+      type: i.type,
+      date: i.date?.toISOString() ?? null,
+      duration: i.duration,
+      interviewer: i.interviewer,
+      status: i.status,
+      notes: i.notes,
+      feedback: i.feedback,
+      prepNotes: i.prepNotes,
+      application: {
+        id: i.application.id,
+        status: i.application.status,
+        job: i.application.job ?? null,
+      },
+      createdAt: i.createdAt.toISOString(),
+      updatedAt: i.updatedAt.toISOString(),
+    }));
+
+    return NextResponse.json({ interviews: data, total });
   } catch (error) {
     console.error('[API /interviews] GET error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -123,23 +158,22 @@ export async function POST(request: Request) {
       date: interview.date,
     });
 
-    return NextResponse.json(
-      {
-        id: interview.id,
-          applicationId: interview.applicationId,
-          round: interview.round,
-          type: interview.type,
-          date: interview.date?.toISOString() ?? null,
-          duration: interview.duration,
-          interviewer: interview.interviewer,
-          status: interview.status,
-          notes: interview.notes,
-          feedback: interview.feedback,
-          createdAt: interview.createdAt.toISOString(),
-          updatedAt: interview.updatedAt.toISOString(),
-      },
-      { status: 201 }
-    );
+    const data: InterviewResponse = {
+      id: interview.id,
+      applicationId: interview.applicationId,
+      round: interview.round,
+      type: interview.type,
+      date: interview.date?.toISOString() ?? null,
+      duration: interview.duration,
+      interviewer: interview.interviewer,
+      status: interview.status,
+      notes: interview.notes,
+      feedback: interview.feedback,
+      createdAt: interview.createdAt.toISOString(),
+      updatedAt: interview.updatedAt.toISOString(),
+    };
+
+    return NextResponse.json({ data }, { status: 201 });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
       return NextResponse.json(
@@ -179,6 +213,18 @@ export async function PATCH(request: Request) {
       );
     }
 
+    // Validate status if provided
+    if (status && !VALID_INTERVIEW_STATUSES.includes(status as typeof VALID_INTERVIEW_STATUSES[number])) {
+      return NextResponse.json(
+        {
+          error: 'Invalid status',
+          message: `status must be one of: ${VALID_INTERVIEW_STATUSES.join(', ')}`,
+          code: 'VALIDATION_ERROR',
+        },
+        { status: 400 }
+      );
+    }
+
     const updateData: Prisma.InterviewUpdateInput = {};
     if (status) updateData.status = status;
     if (feedback !== undefined) updateData.feedback = feedback;
@@ -189,20 +235,22 @@ export async function PATCH(request: Request) {
       data: updateData,
     });
 
-    return NextResponse.json({
-        id: updated.id,
-        applicationId: updated.applicationId,
-        round: updated.round,
-        type: updated.type,
-        date: updated.date?.toISOString() ?? null,
-        duration: updated.duration,
-        interviewer: updated.interviewer,
-        status: updated.status,
-        notes: updated.notes,
-        feedback: updated.feedback,
-        createdAt: updated.createdAt.toISOString(),
-        updatedAt: updated.updatedAt.toISOString(),
-    });
+    const data: InterviewResponse = {
+      id: updated.id,
+      applicationId: updated.applicationId,
+      round: updated.round,
+      type: updated.type,
+      date: updated.date?.toISOString() ?? null,
+      duration: updated.duration,
+      interviewer: updated.interviewer,
+      status: updated.status,
+      notes: updated.notes,
+      feedback: updated.feedback,
+      createdAt: updated.createdAt.toISOString(),
+      updatedAt: updated.updatedAt.toISOString(),
+    };
+
+    return NextResponse.json({ data });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
       return NextResponse.json(

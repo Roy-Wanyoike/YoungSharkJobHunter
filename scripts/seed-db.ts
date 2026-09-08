@@ -431,7 +431,7 @@ async function main() {
           name: src.name,
           type: src.type,
           website: src.website,
-          logoUrl: src.logoUrl || null,
+          logoUrl: (src as Record<string, unknown>).logoUrl as string | null || null,
           isActive: src.isActive,
           lastScraped: src.lastScraped ? new Date(src.lastScraped) : null,
           jobsCount: src.jobsCount,

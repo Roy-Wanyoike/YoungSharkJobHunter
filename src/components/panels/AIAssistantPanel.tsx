@@ -146,7 +146,9 @@ export default function AIAssistantPanel() {
     const ta = textareaRef.current;
     if (ta) {
       ta.style.height = 'auto';
-      ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`;
+      const newHeight = Math.min(ta.scrollHeight, 120);
+      ta.style.height = `${newHeight}px`;
+      ta.style.overflowY = ta.scrollHeight > 120 ? 'auto' : 'hidden';
     }
   }, [input]);
 
@@ -283,7 +285,7 @@ export default function AIAssistantPanel() {
         ) : (
           /* ─── Chat Messages ─── */
           <ScrollArea ref={scrollRef} className="flex-1">
-            <div className="py-4 space-y-1">
+            <div className="py-4 space-y-1" role="log" aria-live="polite">
               {messages.map((msg) => {
                 const isUser = msg.role === 'user';
                 return (
@@ -328,7 +330,7 @@ export default function AIAssistantPanel() {
 
               {/* Typing indicator */}
               {loading && (
-                <div className="flex items-end gap-3 px-4 py-2">
+                <div className="flex items-end gap-3 px-4 py-2" aria-label="AI assistant is typing">
                   <Avatar className="size-7 rounded-lg shrink-0">
                     <AvatarFallback className="rounded-lg bg-primary/10 text-primary">
                       <Bot className="size-3.5" />

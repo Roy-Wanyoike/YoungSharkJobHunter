@@ -370,15 +370,25 @@ function JobDetailDialog({
     toast.success(`Application started for "${job.title}" at ${job.company}`);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const newSaved = !job.isSaved;
     onToggleSave(job.id, newSaved);
-    fetch('/api/jobs', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jobId: job.id, isSaved: newSaved }),
-    });
-    toast.success(newSaved ? 'Job saved!' : 'Job unsaved');
+    try {
+      const res = await fetch('/api/jobs', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId: job.id, isSaved: newSaved }),
+      });
+      if (!res.ok) {
+        onToggleSave(job.id, job.isSaved);
+        toast.error('Failed to update save status');
+        return;
+      }
+      toast.success(newSaved ? 'Job saved!' : 'Job unsaved');
+    } catch {
+      onToggleSave(job.id, job.isSaved);
+      toast.error('Failed to update save status');
+    }
   };
 
   return (
@@ -525,11 +535,15 @@ export default function JobsPanel() {
       const res = await fetch(`/api/jobs?${query}`);
       if (res.ok) {
         const data: JobsResponse = await res.json();
-        setJobs((prev) => (page === 1 ? data.jobs : [...prev, ...data.jobs]));
-        setTotal(data.total);
+        const jobs = data?.jobs ?? [];
+        const total = data?.total ?? 0;
+        setJobs((prev) => (page === 1 ? jobs : [...prev, ...jobs]));
+        setTotal(total);
+      } else {
+        toast.error('Failed to load jobs');
       }
     } catch {
-      // silent
+      toast.error('Failed to load jobs');
     } finally {
       setLoading(false);
     }

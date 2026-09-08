@@ -253,6 +253,21 @@ export function getSalaryInsights(
     entry.medians.push((job.salaryMin! + job.salaryMax!) / 2);
   }
 
+  // Detect predominant salary type from input jobs
+  const salaryTypeCounts = new Map<string, number>();
+  for (const job of withSalary) {
+    const st = job.salaryType || 'yearly';
+    salaryTypeCounts.set(st, (salaryTypeCounts.get(st) ?? 0) + 1);
+  }
+  let predominantSalaryType = 'yearly';
+  let maxCount = 0;
+  for (const [st, count] of salaryTypeCounts) {
+    if (count > maxCount) {
+      maxCount = count;
+      predominantSalaryType = st;
+    }
+  }
+
   const byRole: SalaryRoleInsight[] = Array.from(roleMap.entries())
     .map(([role, data]) => {
       const sortedMins = [...data.mins].sort((a, b) => a - b);
@@ -265,7 +280,7 @@ export function getSalaryInsights(
         salaryMin: sortedMins[0]!,
         salaryMax: sortedMaxes[sortedMaxes.length - 1]!,
         salaryMedian: median(sortedMedians),
-        salaryType: 'yearly',
+        salaryType: predominantSalaryType,
         salaryRange: sortedMaxes[sortedMaxes.length - 1]! - sortedMins[0]!,
       };
     })
@@ -314,7 +329,7 @@ export function getSalaryInsights(
             salaryMin: Math.min(...rd.mins),
             salaryMax: Math.max(...rd.maxes),
             salaryMedian: median(rSortedMedians),
-            salaryType: 'yearly',
+            salaryType: predominantSalaryType,
             salaryRange: Math.max(...rd.maxes) - Math.min(...rd.mins),
           };
         })

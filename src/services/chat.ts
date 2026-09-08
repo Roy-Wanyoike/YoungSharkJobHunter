@@ -220,19 +220,49 @@ export async function chat(
 
 /**
  * Quick helper: generate a resume summary from raw resume text.
- * This is a convenience wrapper around `chat` with a specialized prompt.
+ * Calls the ZAI SDK directly with a specialized system prompt,
+ * bypassing the empty-message guard in the `chat` function.
  */
 export async function summarizeResume(resumeText: string): Promise<string> {
-  const history: Array<{ role: string; content: string }> = [
-    {
-      role: 'system',
-      content: `${SYSTEM_PROMPT}\n\nThe user is providing their resume text. Extract and summarize: 1) A professional summary, 2) All technical skills mentioned, 3) Years of experience, 4) Key achievements. Format as a structured markdown list.`,
-    },
-    {
-      role: 'user',
-      content: `Here is my resume:\n\n${resumeText}`,
-    },
-  ];
+  if (!resumeText || resumeText.trim().length === 0) {
+    return 'Please provide resume text to summarize.';
+  }
 
-  return chat('', history);
+  try {
+    const zai = await getZAI();
+
+    const messages: ChatHistoryEntry[] = [
+      {
+        role: 'system',
+        content: `${SYSTEM_PROMPT}\n\nThe user is providing their resume text. Extract and summarize: 1) A professional summary, 2) All technical skills mentioned, 3) Years of experience, 4) Key achievements. Format as a structured markdown list.`,
+      },
+      {
+        role: 'user',
+        content: `Here is my resume:\n\n${resumeText}`,
+      },
+    ];
+
+    const response = await zai.chat.completions.create({
+      messages,
+    });
+
+    if (response?.choices?.[0]?.message?.content) {
+      return response.choices[0].message.content;
+    }
+
+    if (typeof response === 'string') {
+      return response;
+    }
+
+    if (response?.content) {
+      return String(response.content);
+    }
+
+    console.warn('[Chat/summarizeResume] Unexpected response shape:', JSON.stringify(response).slice(0, 200));
+    return 'Unable to generate resume summary. Please try again.';
+  } catch (error) {
+    console.error('[Chat/summarizeResume] Error:', error);
+    zaiInstance = null;
+    return 'Failed to summarize resume. Please try again later.';
+  }
 }

@@ -52,3 +52,17 @@ prompt
 server.log
 # Skills directory
 /skills/
+
+# Runtime directories
+/tmp/
+/db/
+/upload/
+/tool-results/
+/mini-services/
+
+# Database files
+*.db
+*.db-journal
+
+# Seed scripts with test data
+scripts/seed-db.ts

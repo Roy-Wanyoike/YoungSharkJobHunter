@@ -37,6 +37,9 @@ model JobSource {
   updatedAt     DateTime @updatedAt
   jobs          Job[]
   scrapingLogs  ScrapingLog[]
+
+  @@index([type])
+  @@index([isActive])
 }
 
 model Company {
@@ -84,6 +87,11 @@ model Job {
   applications    Application[]
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
+
+  @@index([sourceId])
+  @@index([companyId])
+  @@index([sourceType])
+  @@index([isActive])
 }
 
 model Resume {
@@ -105,6 +113,8 @@ model Resume {
   user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   versions    ResumeVersion[]
   applications Application[]
+
+  @@index([userId])
 }
 
 model ResumeVersion {
@@ -122,6 +132,8 @@ model ResumeVersion {
   resume        Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  @@index([resumeId])
 }
 
 model Application {
@@ -143,11 +155,15 @@ model Application {
   feedback        String?
   atsScore        Float?
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  job             Job      @relation(fields: [jobId], references: [id])
+  job             Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
   resume          Resume   @relation(fields: [resumeId], references: [id])
   interviews      Interview[]
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@index([jobId])
+  @@index([status])
 }
 
 model Interview {
@@ -165,6 +181,8 @@ model Interview {
   application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
+
+  @@index([applicationId])
 }
 
 model Skill {
@@ -187,6 +205,9 @@ model ScrapingLog {
   duration    Int?
   createdAt   DateTime @default(now())
   sourceModel JobSource? @relation(fields: [sourceId], references: [id])
+
+  @@index([sourceId])
+  @@index([createdAt])
 }
 
 model Notification {
@@ -199,6 +220,9 @@ model Notification {
   link      String?
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
 }
 
 model SalaryData {
@@ -214,4 +238,6 @@ model SalaryData {
   sampleSize    Int      @default(1)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  @@index([role])
 }

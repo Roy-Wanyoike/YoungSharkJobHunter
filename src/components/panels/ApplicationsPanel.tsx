@@ -473,11 +473,12 @@ export default function ApplicationsPanel() {
       const res = await fetch(`/api/applications${params}`);
       if (!res.ok) throw new Error('Failed to fetch');
       const data: ApplicationsResponse = await res.json();
-      setApplications(data.applications ?? []);
-      setStatusCounts(data.counts ?? {});
+      setApplications(data?.applications ?? []);
+      setStatusCounts(data?.counts ?? {});
     } catch {
       setApplications([]);
       setStatusCounts({});
+      toast.error('Failed to load applications');
     } finally {
       setLoading(false);
     }
@@ -600,10 +601,20 @@ export default function ApplicationsPanel() {
     }
   };
 
-  const openScheduleDialog = (app: ApplicationItem) => {
+  const openScheduleDialog = async (app: ApplicationItem) => {
     setScheduleApp(app);
-    // Calculate next round
-    const existingRounds = 0; // Could fetch, default to 1
+    // Calculate next round from existing interviews
+    let existingRounds = 0;
+    try {
+      const res = await fetch(`/api/interviews?applicationId=${app.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        const interviews: Interview[] = Array.isArray(data) ? data : data.interviews ?? [];
+        existingRounds = interviews.length;
+      }
+    } catch {
+      // If fetch fails, default to 0
+    }
     setScheduleForm((f) => ({ ...f, round: existingRounds + 1 }));
     setScheduleDialogOpen(true);
   };
@@ -666,7 +677,7 @@ export default function ApplicationsPanel() {
 
       {/* Stats summary */}
       <Separator className="mt-2" />
-      <div className="grid grid-cols-4 gap-2 px-2 py-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 px-2 py-3">
         <div className="text-center">
           <p className="text-lg font-bold">{stats.total}</p>
           <p className="text-[10px] text-muted-foreground">Total</p>

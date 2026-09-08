@@ -103,7 +103,9 @@ export async function getConnectorSources(): Promise<ConnectorSourceView[]> {
     }));
 
     for (const item of seedData) {
-      await db.jobSource.create({ data: item }).catch(() => {});
+      await db.jobSource.create({ data: item }).catch((e) => {
+        console.error('[discovery] source seed failed:', e instanceof Error ? e.message : String(e));
+      });
     }
 
     const fresh = await db.jobSource.findMany({ orderBy: { name: 'asc' } });
@@ -160,29 +162,40 @@ export async function triggerScraping(
       const newRatio = Math.random() * 0.4 + 0.3;
       jobsNew = Math.round(jobsFound * newRatio);
 
-      // Persist discovered jobs to DB
+      // Persist discovered jobs to DB in batches
       if (discovered.length > 0) {
-        for (const job of discovered) {
-          await db.job.create({
-            data: {
-              title: job.title,
-              company: job.company,
-              source: connector.sourceName,
-              sourceId: connector.sourceId,
-              sourceType: connector.sourceType,
-              sourceUrl: job.sourceUrl,
-              location: job.location ?? null,
-              remote: job.remote,
-              salaryMin: job.salaryMin ?? null,
-              salaryMax: job.salaryMax ?? null,
-              salaryType: job.salaryType ?? null,
-              description: job.description,
-              requirements: job.requirements ?? null,
-              skills: JSON.stringify(job.skills),
-              experienceLevel: job.experienceLevel ?? null,
-              jobType: job.jobType ?? null,
-            },
-          }).catch(() => {});
+        const BATCH_SIZE = 50;
+        for (let i = 0; i < discovered.length; i += BATCH_SIZE) {
+          const batch = discovered.slice(i, i + BATCH_SIZE);
+          const batchData = batch.map((job) => ({
+            title: job.title,
+            company: job.company,
+            source: connector.sourceName,
+            sourceId: connector.sourceId,
+            sourceType: connector.sourceType,
+            sourceUrl: job.sourceUrl,
+            location: job.location ?? null,
+            remote: job.remote,
+            salaryMin: job.salaryMin ?? null,
+            salaryMax: job.salaryMax ?? null,
+            salaryType: job.salaryType ?? null,
+            description: job.description,
+            requirements: job.requirements ?? null,
+            skills: JSON.stringify(job.skills),
+            experienceLevel: job.experienceLevel ?? null,
+            jobType: job.jobType ?? null,
+          }));
+
+          try {
+            await db.job.createMany({ data: batchData });
+          } catch (e) {
+            // Fallback: insert one-by-one for SQLite constraint errors
+            for (const data of batchData) {
+              await db.job.create({ data }).catch((err) => {
+                console.error('[discovery] job insert failed:', err instanceof Error ? err.message : String(err));
+              });
+            }
+          }
         }
 
         // Emit discovery event for each job

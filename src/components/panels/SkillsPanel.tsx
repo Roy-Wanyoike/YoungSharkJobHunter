@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { toast } from 'sonner';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -155,12 +156,14 @@ export default function SkillsPanel() {
       const res = await fetch(`/api/skills${query}`);
       if (res.ok) {
         const data: SkillsResponse = await res.json();
-        setSkills(data.skills);
+        setSkills(data?.skills ?? []);
       } else {
         setSkills([]);
+        toast.error('Failed to load skills');
       }
     } catch {
       setSkills([]);
+      toast.error('Failed to load skills');
     } finally {
       setLoading(false);
     }

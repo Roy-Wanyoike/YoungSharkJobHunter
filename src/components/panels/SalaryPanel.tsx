@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { toast } from 'sonner';
 
 interface SalaryRoleInsight {
   role: string;
@@ -25,6 +26,7 @@ interface SalarySourceInsight {
   avgMin: number;
   avgMax: number;
   avgMedian: number;
+  salaryType?: string;
   roles: SalaryRoleInsight[];
 }
 
@@ -60,9 +62,14 @@ export default function SalaryPanel() {
       const res = await fetch(`/api/salary?${params}`);
       if (!res.ok) throw new Error('Failed to fetch salary data');
       const json = await res.json();
-      setData(json);
+      if (json && json.byRole && json.bySourceType) {
+        setData(json);
+      } else {
+        setData(null);
+      }
     } catch {
       setData(null);
+      toast.error('Failed to load salary data');
     } finally {
       setLoading(false);
     }
@@ -204,7 +211,7 @@ export default function SalaryPanel() {
                   <Badge variant="outline" className="text-xs">{src.sampleSize} jobs</Badge>
                   <Badge className={sourceTypeColors[src.sourceType] || 'bg-gray-100 text-gray-700'}>{titleCase(src.sourceType)}</Badge>
                 </div>
-                <span className="text-sm font-semibold">Median: {formatSalary(Math.round(src.avgMedian), 'hourly')}</span>
+                <span className="text-sm font-semibold">Median: {formatSalary(Math.round(src.avgMedian), src.salaryType || 'yearly')}</span>
               </div>
               <div className="grid grid-cols-3 gap-3 text-center text-sm">
                 <div className="bg-muted/50 rounded-lg p-2"><p className="text-muted-foreground text-xs">Avg Min</p><p className="font-semibold">${src.avgMin}</p></div>

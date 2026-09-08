@@ -315,6 +315,19 @@ export default function ResumeVaultPanel() {
   const [versions, setVersions] = useState<ResumeVersion[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  /* ---- Fetch resume versions ---- */
+  const fetchVersions = useCallback(async () => {
+    try {
+      const res = await fetch('/api/resume/versions');
+      if (res.ok) {
+        const data = await res.json();
+        setVersions(Array.isArray(data) ? data : data?.versions ?? []);
+      }
+    } catch {
+      // Versions are non-critical, don't show toast
+    }
+  }, []);
+
   /* ---- Fetch resume data ---- */
   const fetchResume = useCallback(async () => {
     setLoading(true);
@@ -325,9 +338,11 @@ export default function ResumeVaultPanel() {
         setResume(data);
       } else {
         setResume(null);
+        toast.error('Failed to load resume');
       }
     } catch {
       setResume(null);
+      toast.error('Failed to load resume');
     } finally {
       setLoading(false);
     }
@@ -335,7 +350,8 @@ export default function ResumeVaultPanel() {
 
   useEffect(() => {
     fetchResume();
-  }, [fetchResume]);
+    fetchVersions();
+  }, [fetchResume, fetchVersions]);
 
   /* ---- Upload file ---- */
   const uploadFile = useCallback(
@@ -366,6 +382,7 @@ export default function ResumeVaultPanel() {
         if (res.ok) {
           toast.success('Resume uploaded and parsed successfully!');
           fetchResume();
+          fetchVersions();
         } else {
           const errData = await res.json().catch(() => null);
           toast.error(errData?.error ?? 'Failed to upload resume.');
@@ -376,7 +393,7 @@ export default function ResumeVaultPanel() {
         setUploading(false);
       }
     },
-    [fetchResume],
+    [fetchResume, fetchVersions],
   );
 
   /* ---- Drag & Drop handlers ---- */

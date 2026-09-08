@@ -596,10 +596,19 @@ export default function DashboardPanel() {
       const res = await fetch('/api/dashboard');
       if (res.ok) {
         const json = await res.json();
-        setData(json);
+        if (json && json.stats) {
+          setData(json);
+        } else {
+          setData(null);
+          toast.error('Invalid dashboard data received');
+        }
+      } else {
+        setData(null);
+        toast.error('Failed to load dashboard');
       }
     } catch {
-      // silently fail
+      setData(null);
+      toast.error('Failed to load dashboard');
     } finally {
       setLoading(false);
     }

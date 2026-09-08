@@ -126,9 +126,7 @@ export default function ResumeGeneratorPanel() {
         const res = await fetch(`/api/jobs?search=${encodeURIComponent(search.trim())}&limit=10`);
         if (res.ok) {
           const data = await res.json();
-          const items: JobSearchItem[] = Array.isArray(data)
-            ? data
-            : (data.jobs ?? []);
+          const items: JobSearchItem[] = data?.jobs ?? (Array.isArray(data) ? data : []);
           setJobs(items);
           setDropdownOpen(true);
         }
@@ -257,12 +255,14 @@ export default function ResumeGeneratorPanel() {
 
           {/* Dropdown */}
           {dropdownOpen && jobs.length > 0 && (
-            <div className="rounded-md border bg-popover shadow-md">
+            <div className="rounded-md border bg-popover shadow-md" role="listbox" aria-label="Job suggestions">
               <ScrollArea className="max-h-60">
                 {jobs.map((job) => (
                   <button
                     key={job.id}
                     className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-accent transition-colors"
+                    role="option"
+                    aria-selected={selectedJob?.id === job.id}
                     onMouseDown={() => {
                       setSelectedJob(job);
                       setDropdownOpen(false);
